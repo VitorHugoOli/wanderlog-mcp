@@ -8,11 +8,7 @@ import {
   addFlightDescription,
   addFlightInputSchema,
 } from "../../src/tools/add-flight.ts";
-import {
-  buildAirportEndpoint,
-  buildFlightBlock,
-  sectionInsertOp,
-} from "../../src/tools/shared.ts";
+import { buildAirportEndpoint, buildFlightBlock, sectionInsertOp } from "../../src/tools/shared.ts";
 import type { AirportEndpoint, PlaceData, TripPlan } from "../../src/types.ts";
 
 const place = (name: string): PlaceData => ({

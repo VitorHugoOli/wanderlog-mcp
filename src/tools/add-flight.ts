@@ -48,10 +48,7 @@ export const addFlightInputSchema = {
     .string()
     .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, "must be HH:mm (00:00–23:59)")
     .describe("Arrival time (24h)."),
-  confirmation_number: z
-    .string()
-    .optional()
-    .describe("Booking/confirmation number (optional)."),
+  confirmation_number: z.string().optional().describe("Booking/confirmation number (optional)."),
   notes: z.string().optional().describe("Free-text notes shown on the block (optional)."),
   traveler_names: z
     .array(z.string().min(1))
