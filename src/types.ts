@@ -89,6 +89,9 @@ export type FlightBlock = {
   arrive?: AirportEndpoint;
   confirmationNumber?: string;
   travelerNames?: string[];
+  addedBy?: { type: string; userId: number };
+  text?: QuillDelta;
+  attachments?: unknown[];
 };
 
 /**
@@ -155,6 +158,10 @@ export function isPlaceBlock(block: Block): block is PlaceBlock {
 
 export function isChecklistBlock(block: Block): block is ChecklistBlock {
   return block.type === "checklist" && "items" in block;
+}
+
+export function isFlightBlock(block: Block): block is FlightBlock {
+  return block.type === "flight";
 }
 
 export function isTransitBlock(block: Block): block is TransitBlock {

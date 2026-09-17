@@ -108,6 +108,7 @@ import {
   addCarRentalDescription,
   addCarRentalInputSchema,
 } from "./tools/add-car-rental.js";
+import { addFlight, addFlightDescription, addFlightInputSchema } from "./tools/add-flight.js";
 
 type ToolResponse = {
   content: { type: "text"; text: string }[];
@@ -245,8 +246,10 @@ of places. A complete itinerary uses these building blocks:
      to list curated user-written guides for the destination, then get_guide with the chosen
      guide_key to read the full content. Use this for OTHER people's published guides; for
      your own trips use wanderlog_get_trip.
-  8. wanderlog_add_transit — ferry / bus / train legs between places (carrier, from/to, dates,
-     times). wanderlog_add_car_rental — a rental car with pick-up and drop-off locations/times.
+  8. wanderlog_add_flight — flight bookings (airline, flight number, depart/arrive airports,
+     dates, times). wanderlog_add_transit — ferry / bus / train legs between places (carrier,
+     from/to, dates, times). wanderlog_add_car_rental — a rental car with pick-up and drop-off
+     locations/times.
 
 Example add_place call with all features:
   wanderlog_add_place(trip_key, place: "Sensō-ji", day: "day 1",
@@ -669,6 +672,16 @@ export function buildServer(ctx: AppContext): McpServer {
     requireAuth(ctx, async (args) =>
       reorderSections(ctx, args as Parameters<typeof reorderSections>[1]),
     ),
+  );
+
+  server.registerTool(
+    "wanderlog_add_flight",
+    {
+      title: "Add a flight booking",
+      description: addFlightDescription,
+      inputSchema: addFlightInputSchema,
+    },
+    requireAuth(ctx, async (args) => addFlight(ctx, args as Parameters<typeof addFlight>[1])),
   );
 
   return server;
