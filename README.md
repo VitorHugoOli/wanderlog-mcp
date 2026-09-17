@@ -46,6 +46,11 @@ Personal fork ([VitorHugoOli/wanderlog-mcp](https://github.com/VitorHugoOli/wand
 - `wanderlog_get_place_details` — opening hours, rating, phone, website, and a Google Maps link for any place, in the trip or not.
 - `wanderlog_edit_checklist` — tick/untick, add, remove, and rename items on an existing checklist.
 - `wanderlog_edit_reservation` — change confirmation numbers, traveler names, times/dates, carrier/airline, and notes on flights, trains/ferries/buses, rental cars, and hotel stays without re-adding them.
+- `wanderlog_explore` — Wanderlog's curated "Explore" recommendations for a destination: top attractions/restaurants, 90+ categories (temples, cafes, bakeries, kid-friendly…), ratings, visit durations, and "near the hotel" suggestions.
+- `wanderlog_get_travel_times` — drive / transit / walk time and distance between consecutive places in a day, as shown in the Wanderlog UI.
+- `wanderlog_set_budget` + `wanderlog_budget_summary` — budget target, "simplify group expenses", spend by category/day/person, and who-owes-whom balances. `wanderlog_add_expense` / `wanderlog_edit_expense` gained `paid_by` and `split_with`.
+- `wanderlog_add_restaurant_reservation` — record a restaurant booking (date, time, party size, confirmation) in the Restaurant reservations section.
+- `wanderlog_update_trip` also sets the default travel mode (driving / transit).
 - Merged upstream: `wanderlog_move_place` (move places across days/lists keeping notes and times), `wanderlog_reorder_places`, `wanderlog_reorder_sections`, and `place_id` support in `wanderlog_add_place`.
 
 - Place and custom-list ordering tools support explicit 1-based positions with safe boundary validation.
@@ -125,87 +130,152 @@ and a ryokan in Shinjuku."
 "Remove the Colosseum from day 2 of my Rome trip."
 ```
 
+```
+"What are the best temples and cafes in Kyoto? Add the top three temples to day 2."
+```
+
+```
+"How long will we spend travelling on day 3 by public transit?"
+```
+
+```
+"Log 12,000 yen for dinner, I paid, split with everyone — and who owes whom so far?"
+```
+
+```
+"Invite sam@example.com to my Bali trip."
+```
+
 ## Tools
 
-| Tool                                  | What it does                                                                                                        |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `wanderlog_list_trips`                | List trips in your account                                                                                          |
-| `wanderlog_get_trip`                  | View a full itinerary, or filter to a single day                                                                    |
-| `wanderlog_get_trip_url`              | Get a shareable wanderlog.com link                                                                                  |
-| `wanderlog_get_trip_forwarding_email` | Get a trip's `trip+<id>@wanderlog.com` import address                                                               |
-| `wanderlog_search_places`             | Find real-world places near a trip's destination                                                                    |
-| `wanderlog_search_guides`             | List user-written travel guides for a destination, with fallback suggestions when none exist                        |
-| `wanderlog_get_guide`                 | Read the full content of a public Wanderlog guide (sections, places, notes)                                         |
-| `wanderlog_search_hotels`             | Search Wanderlog's hotel aggregator (airbnb/expedia/google/kayak) with per-vendor deal comparison                   |
-| `wanderlog_create_trip`               | Create a new trip with destination + date range                                                                     |
-| `wanderlog_add_place`                 | Add a place to a specific day or general list                                                                       |
-| `wanderlog_add_note`                  | Add a note (transit tips, booking info, local advice)                                                               |
-| `wanderlog_edit_note`                 | Find-and-replace text in notes, place annotations, and checklists                                                   |
-| `wanderlog_remove_note`               | Remove a standalone note block by natural-language reference                                                        |
-| `wanderlog_add_hotel`                 | Add a hotel booking with check-in/check-out dates                                                                   |
-| `wanderlog_add_transit`               | Add a ferry, bus, or train leg (carrier, from/to, dates/times) to the shared Transit section                        |
-| `wanderlog_add_car_rental`            | Add a rental car with pick-up/drop-off locations and times                                                          |
-| `wanderlog_add_checklist`             | Add a pre-trip or per-day checklist                                                                                 |
-| `wanderlog_add_expense`               | Log a budget expense (amount, category, currency), optionally linked to a place                                     |
-| `wanderlog_list_expenses`             | List budget expenses, optionally filtered by description / date / amount / currency                                 |
-| `wanderlog_remove_expense`            | Remove a budget expense by description (with optional date / amount / currency filters)                             |
-| `wanderlog_edit_expense`              | Change a budget expense's description, amount, currency, category, or date                                          |
-| `wanderlog_annotate_place`            | Update an existing place with a note, start/end time, or both                                                       |
-| `wanderlog_remove_place`              | Remove a place by natural-language reference                                                                        |
-| `wanderlog_move_block`                | Move an existing place or reservation block within its current section                                              |
-| `wanderlog_update_trip_dates`         | Change a trip's date range                                                                                          |
-| `wanderlog_rename_day`                | Rename a day's heading (e.g. `"Barcelona"` → `"Arrival — Feria de Abril"`)                                          |
-| `wanderlog_add_section`               | Create a uniquely named custom list, optionally after another section                                               |
-| `wanderlog_update_section`            | Rename a custom list while preventing duplicate headings                                                            |
-| `wanderlog_delete_section`            | Permanently delete a custom list and all blocks inside it                                                           |
-| `wanderlog_list_journal`              | List journal (travelogue) stops, optionally filtered by title or date                                               |
-| `wanderlog_add_journal`               | Add a journal stop: a place + date/time + text entry                                                                |
-| `wanderlog_edit_journal`              | Edit a journal stop's title, text, or date/time (or the journal summary)                                            |
-| `wanderlog_remove_journal`            | Remove a journal stop by title (with an optional date filter)                                                       |
-| Tool                                  | What it does                                                                                                        |
-| ---                                   | ---                                                                                                                 |
-| `wanderlog_list_trips`                | List trips in your account                                                                                          |
-| `wanderlog_get_trip`                  | View a full itinerary, or filter to a single day                                                                    |
-| `wanderlog_get_trip_url`              | Get a shareable wanderlog.com link                                                                                  |
-| `wanderlog_get_trip_forwarding_email` | Get a trip's `trip+<id>@wanderlog.com` import address                                                               |
-| `wanderlog_search_places`             | Find real-world places near a trip's destination                                                                    |
-| `wanderlog_get_place_details`         | Opening hours, rating, phone, website, and map link for a place                                                     |
-| `wanderlog_search_guides`             | List user-written travel guides for a destination, with fallback suggestions when none exist                        |
-| `wanderlog_get_guide`                 | Read the full content of a public Wanderlog guide (sections, places, notes)                                         |
-| `wanderlog_search_hotels`             | Search Wanderlog's hotel aggregator (airbnb/expedia/google/kayak) with per-vendor deal comparison                   |
-| `wanderlog_create_trip`               | Create a new trip with destination + date range                                                                     |
-| `wanderlog_update_trip`               | Rename a trip or change its privacy (private / friends / public)                                                    |
-| `wanderlog_delete_trip`               | Permanently delete a trip (requires the exact title as confirmation)                                                |
-| `wanderlog_add_place`                 | Add a place to a specific day or general list                                                                       |
-| `wanderlog_add_note`                  | Add a note (transit tips, booking info, local advice)                                                               |
-| `wanderlog_edit_note`                 | Find-and-replace text in notes, place annotations, and checklists                                                   |
-| `wanderlog_remove_note`               | Remove a standalone note block by natural-language reference                                                        |
-| `wanderlog_add_hotel`                 | Add a hotel booking with check-in/check-out dates                                                                   |
-| `wanderlog_add_flight`                | Add a flight booking (airline, flight number, depart/arrive airports, dates, times)                                 |
-| `wanderlog_add_transit`               | Add a ferry, bus, or train leg (carrier, from/to, dates/times) to the shared Transit section                        |
-| `wanderlog_add_car_rental`            | Add a rental car with pick-up/drop-off locations and times                                                          |
-| `wanderlog_edit_reservation`          | Edit confirmation number, travelers, dates/times, carrier, or notes on a flight, transit, rental car, or hotel stay |
-| `wanderlog_add_checklist`             | Add a pre-trip or per-day checklist                                                                                 |
-| `wanderlog_edit_checklist`            | Tick/untick, add, remove, or rename items on an existing checklist                                                  |
-| `wanderlog_add_expense`               | Log a budget expense (amount, category, currency), optionally linked to a place                                     |
-| `wanderlog_list_expenses`             | List budget expenses, optionally filtered by description / date / amount / currency                                 |
-| `wanderlog_remove_expense`            | Remove a budget expense by description (with optional date / amount / currency filters)                             |
-| `wanderlog_edit_expense`              | Change a budget expense's description, amount, currency, category, or date                                          |
-| `wanderlog_annotate_place`            | Update an existing place with a note, start/end time, or both                                                       |
-| `wanderlog_remove_place`              | Remove a place by natural-language reference                                                                        |
-| `wanderlog_move_block`                | Move an existing place or reservation block within its current section                                              |
-| `wanderlog_move_place`                | Move an existing place to another undated list or itinerary day, preserving its metadata                            |
-| `wanderlog_reorder_places`            | Move a place to a 1-based position within the same list or day                                                      |
-| `wanderlog_update_trip_dates`         | Change a trip's date range                                                                                          |
-| `wanderlog_rename_day`                | Rename a day's heading (e.g. `"Barcelona"` → `"Arrival — Feria de Abril"`)                                          |
-| `wanderlog_add_section`               | Create a uniquely named custom list, optionally after another section                                               |
-| `wanderlog_update_section`            | Rename a custom list while preventing duplicate headings                                                            |
-| `wanderlog_delete_section`            | Permanently delete a custom list and all blocks inside it                                                           |
-| `wanderlog_reorder_sections`          | Move a custom list to a 1-based position among custom lists                                                         |
-| `wanderlog_list_journal`              | List journal (travelogue) stops, optionally filtered by title or date                                               |
-| `wanderlog_add_journal`               | Add a journal stop: a place + date/time + text entry                                                                |
-| `wanderlog_edit_journal`              | Edit a journal stop's title, text, or date/time (or the journal summary)                                            |
-| `wanderlog_remove_journal`            | Remove a journal stop by title (with an optional date filter)                                                       |
+| Tool                                   | What it does                                                                                                                   |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `wanderlog_list_trips`                 | List trips in your account                                                                                                     |
+| `wanderlog_get_trip`                   | View a full itinerary, or filter to a single day                                                                               |
+| `wanderlog_get_trip_url`               | Get a shareable wanderlog.com link                                                                                             |
+| `wanderlog_get_trip_forwarding_email`  | Get a trip's `trip+<id>@wanderlog.com` import address                                                                          |
+| `wanderlog_search_places`              | Find real-world places near a trip's destination                                                                               |
+| `wanderlog_search_guides`              | List user-written travel guides for a destination, with fallback suggestions when none exist                                   |
+| `wanderlog_get_guide`                  | Read the full content of a public Wanderlog guide (sections, places, notes)                                                    |
+| `wanderlog_search_hotels`              | Search Wanderlog's hotel aggregator (airbnb/expedia/google/kayak) with per-vendor deal comparison                              |
+| `wanderlog_create_trip`                | Create a new trip with destination + date range                                                                                |
+| `wanderlog_add_place`                  | Add a place to a specific day or general list                                                                                  |
+| `wanderlog_add_note`                   | Add a note (transit tips, booking info, local advice)                                                                          |
+| `wanderlog_edit_note`                  | Find-and-replace text in notes, place annotations, and checklists                                                              |
+| `wanderlog_remove_note`                | Remove a standalone note block by natural-language reference                                                                   |
+| `wanderlog_add_hotel`                  | Add a hotel booking with check-in/check-out dates                                                                              |
+| `wanderlog_add_transit`                | Add a ferry, bus, or train leg (carrier, from/to, dates/times) to the shared Transit section                                   |
+| `wanderlog_add_car_rental`             | Add a rental car with pick-up/drop-off locations and times                                                                     |
+| `wanderlog_add_checklist`              | Add a pre-trip or per-day checklist                                                                                            |
+| `wanderlog_add_expense`                | Log a budget expense (amount, category, currency), optionally linked to a place                                                |
+| `wanderlog_list_expenses`              | List budget expenses, optionally filtered by description / date / amount / currency                                            |
+| `wanderlog_remove_expense`             | Remove a budget expense by description (with optional date / amount / currency filters)                                        |
+| `wanderlog_edit_expense`               | Change a budget expense's description, amount, currency, category, or date                                                     |
+| `wanderlog_annotate_place`             | Update an existing place with a note, start/end time, or both                                                                  |
+| `wanderlog_remove_place`               | Remove a place by natural-language reference                                                                                   |
+| `wanderlog_move_block`                 | Move an existing place or reservation block within its current section                                                         |
+| `wanderlog_update_trip_dates`          | Change a trip's date range                                                                                                     |
+| `wanderlog_rename_day`                 | Rename a day's heading (e.g. `"Barcelona"` → `"Arrival — Feria de Abril"`)                                                     |
+| `wanderlog_add_section`                | Create a uniquely named custom list, optionally after another section                                                          |
+| `wanderlog_update_section`             | Rename a custom list while preventing duplicate headings                                                                       |
+| `wanderlog_delete_section`             | Permanently delete a custom list and all blocks inside it                                                                      |
+| `wanderlog_list_journal`               | List journal (travelogue) stops, optionally filtered by title or date                                                          |
+| `wanderlog_add_journal`                | Add a journal stop: a place + date/time + text entry                                                                           |
+| `wanderlog_edit_journal`               | Edit a journal stop's title, text, or date/time (or the journal summary)                                                       |
+| `wanderlog_remove_journal`             | Remove a journal stop by title (with an optional date filter)                                                                  |
+| Tool                                   | What it does                                                                                                                   |
+| ---                                    | ---                                                                                                                            |
+| `wanderlog_list_trips`                 | List trips in your account                                                                                                     |
+| `wanderlog_get_trip`                   | View a full itinerary, or filter to a single day                                                                               |
+| `wanderlog_get_trip_url`               | Get a shareable wanderlog.com link                                                                                             |
+| `wanderlog_get_trip_forwarding_email`  | Get a trip's `trip+<id>@wanderlog.com` import address                                                                          |
+| `wanderlog_search_places`              | Find real-world places near a trip's destination                                                                               |
+| `wanderlog_get_place_details`          | Opening hours, rating, phone, website, and map link for a place                                                                |
+| `wanderlog_search_guides`              | List user-written travel guides for a destination, with fallback suggestions when none exist                                   |
+| `wanderlog_get_guide`                  | Read the full content of a public Wanderlog guide (sections, places, notes)                                                    |
+| `wanderlog_search_hotels`              | Search Wanderlog's hotel aggregator (airbnb/expedia/google/kayak) with per-vendor deal comparison                              |
+| `wanderlog_create_trip`                | Create a new trip with destination + date range                                                                                |
+| `wanderlog_update_trip`                | Rename a trip or change its privacy (private / friends / public)                                                               |
+| `wanderlog_delete_trip`                | Permanently delete a trip (requires the exact title as confirmation)                                                           |
+| `wanderlog_add_place`                  | Add a place to a specific day or general list                                                                                  |
+| `wanderlog_add_note`                   | Add a note (transit tips, booking info, local advice)                                                                          |
+| `wanderlog_edit_note`                  | Find-and-replace text in notes, place annotations, and checklists                                                              |
+| `wanderlog_remove_note`                | Remove a standalone note block by natural-language reference                                                                   |
+| `wanderlog_add_hotel`                  | Add a hotel booking with check-in/check-out dates                                                                              |
+| `wanderlog_add_flight`                 | Add a flight booking (airline, flight number, depart/arrive airports, dates, times)                                            |
+| `wanderlog_add_transit`                | Add a ferry, bus, or train leg (carrier, from/to, dates/times) to the shared Transit section                                   |
+| `wanderlog_add_car_rental`             | Add a rental car with pick-up/drop-off locations and times                                                                     |
+| `wanderlog_edit_reservation`           | Edit confirmation number, travelers, dates/times, carrier, or notes on a flight, transit, rental car, or hotel stay            |
+| `wanderlog_add_checklist`              | Add a pre-trip or per-day checklist                                                                                            |
+| `wanderlog_edit_checklist`             | Tick/untick, add, remove, or rename items on an existing checklist                                                             |
+| `wanderlog_add_expense`                | Log a budget expense (amount, category, currency), optionally linked to a place                                                |
+| `wanderlog_list_expenses`              | List budget expenses, optionally filtered by description / date / amount / currency                                            |
+| `wanderlog_remove_expense`             | Remove a budget expense by description (with optional date / amount / currency filters)                                        |
+| `wanderlog_edit_expense`               | Change a budget expense's description, amount, currency, category, or date                                                     |
+| `wanderlog_annotate_place`             | Update an existing place with a note, start/end time, or both                                                                  |
+| `wanderlog_remove_place`               | Remove a place by natural-language reference                                                                                   |
+| `wanderlog_move_block`                 | Move an existing place or reservation block within its current section                                                         |
+| `wanderlog_move_place`                 | Move an existing place to another undated list or itinerary day, preserving its metadata                                       |
+| `wanderlog_reorder_places`             | Move a place to a 1-based position within the same list or day                                                                 |
+| `wanderlog_update_trip_dates`          | Change a trip's date range                                                                                                     |
+| `wanderlog_rename_day`                 | Rename a day's heading (e.g. `"Barcelona"` → `"Arrival — Feria de Abril"`)                                                     |
+| `wanderlog_add_section`                | Create a uniquely named custom list, optionally after another section                                                          |
+| `wanderlog_update_section`             | Rename a custom list while preventing duplicate headings                                                                       |
+| `wanderlog_delete_section`             | Permanently delete a custom list and all blocks inside it                                                                      |
+| `wanderlog_reorder_sections`           | Move a custom list to a 1-based position among custom lists                                                                    |
+| `wanderlog_list_journal`               | List journal (travelogue) stops, optionally filtered by title or date                                                          |
+| `wanderlog_add_journal`                | Add a journal stop: a place + date/time + text entry                                                                           |
+| `wanderlog_edit_journal`               | Edit a journal stop's title, text, or date/time (or the journal summary)                                                       |
+| `wanderlog_remove_journal`             | Remove a journal stop by title (with an optional date filter)                                                                  |
+| Tool                                   | What it does                                                                                                                   |
+| ---                                    | ---                                                                                                                            |
+| `wanderlog_list_trips`                 | List trips in your account                                                                                                     |
+| `wanderlog_get_trip`                   | View a full itinerary, or filter to a single day                                                                               |
+| `wanderlog_get_trip_url`               | Get a shareable wanderlog.com link                                                                                             |
+| `wanderlog_get_trip_forwarding_email`  | Get a trip's `trip+<id>@wanderlog.com` import address                                                                          |
+| `wanderlog_search_places`              | Find real-world places near a trip's destination                                                                               |
+| `wanderlog_get_place_details`          | Opening hours, rating, phone, website, and map link for a place                                                                |
+| `wanderlog_explore`                    | Curated recommendations for the destination: top attractions/restaurants, categories, or places near a spot in the trip        |
+| `wanderlog_get_travel_times`           | Travel time & distance between consecutive places in a day (driving / transit / walking)                                       |
+| `wanderlog_search_guides`              | List user-written travel guides for a destination, with fallback suggestions when none exist                                   |
+| `wanderlog_get_guide`                  | Read the full content of a public Wanderlog guide (sections, places, notes)                                                    |
+| `wanderlog_search_hotels`              | Search Wanderlog's hotel aggregator (airbnb/expedia/google/kayak) with per-vendor deal comparison                              |
+| `wanderlog_create_trip`                | Create a new trip with destination + date range                                                                                |
+| `wanderlog_update_trip`                | Rename a trip, change its privacy (private / friends / public), or its default travel mode                                     |
+| `wanderlog_delete_trip`                | Permanently delete a trip (requires the exact title as confirmation)                                                           |
+| `wanderlog_add_place`                  | Add a place to a specific day or general list                                                                                  |
+| `wanderlog_add_note`                   | Add a note (transit tips, booking info, local advice)                                                                          |
+| `wanderlog_edit_note`                  | Find-and-replace text in notes, place annotations, and checklists                                                              |
+| `wanderlog_remove_note`                | Remove a standalone note block by natural-language reference                                                                   |
+| `wanderlog_add_hotel`                  | Add a hotel booking with check-in/check-out dates                                                                              |
+| `wanderlog_add_flight`                 | Add a flight booking (airline, flight number, depart/arrive airports, dates, times)                                            |
+| `wanderlog_add_transit`                | Add a ferry, bus, or train leg (carrier, from/to, dates/times) to the shared Transit section                                   |
+| `wanderlog_add_car_rental`             | Add a rental car with pick-up/drop-off locations and times                                                                     |
+| `wanderlog_add_restaurant_reservation` | Record a restaurant booking (date, time, party size, confirmation)                                                             |
+| `wanderlog_edit_reservation`           | Edit confirmation number, travelers, dates/times, carrier, or notes on a flight, transit, rental car, or hotel stay            |
+| `wanderlog_add_checklist`              | Add a pre-trip or per-day checklist                                                                                            |
+| `wanderlog_edit_checklist`             | Tick/untick, add, remove, or rename items on an existing checklist                                                             |
+| `wanderlog_add_expense`                | Log a budget expense (amount, category, currency), optionally linked to a place, with `paid_by` / `split_with` for group trips |
+| `wanderlog_set_budget`                 | Set the trip budget target and the 'simplify group expenses' toggle                                                            |
+| `wanderlog_budget_summary`             | Spend vs. target, by category / day / payer, and who-owes-whom balances                                                        |
+| `wanderlog_list_expenses`              | List budget expenses, optionally filtered by description / date / amount / currency                                            |
+| `wanderlog_remove_expense`             | Remove a budget expense by description (with optional date / amount / currency filters)                                        |
+| `wanderlog_edit_expense`               | Change a budget expense's description, amount, currency, category, date, payer, or split                                       |
+| `wanderlog_annotate_place`             | Update an existing place with a note, start/end time, or both                                                                  |
+| `wanderlog_remove_place`               | Remove a place by natural-language reference                                                                                   |
+| `wanderlog_move_block`                 | Move an existing place or reservation block within its current section                                                         |
+| `wanderlog_move_place`                 | Move an existing place to another undated list or itinerary day, preserving its metadata                                       |
+| `wanderlog_reorder_places`             | Move a place to a 1-based position within the same list or day                                                                 |
+| `wanderlog_update_trip_dates`          | Change a trip's date range                                                                                                     |
+| `wanderlog_rename_day`                 | Rename a day's heading (e.g. `"Barcelona"` → `"Arrival — Feria de Abril"`)                                                     |
+| `wanderlog_add_section`                | Create a uniquely named custom list, optionally after another section                                                          |
+| `wanderlog_update_section`             | Rename a custom list while preventing duplicate headings                                                                       |
+| `wanderlog_delete_section`             | Permanently delete a custom list and all blocks inside it                                                                      |
+| `wanderlog_reorder_sections`           | Move a custom list to a 1-based position among custom lists                                                                    |
+| `wanderlog_list_journal`               | List journal (travelogue) stops, optionally filtered by title or date                                                          |
+| `wanderlog_add_journal`                | Add a journal stop: a place + date/time + text entry                                                                           |
+| `wanderlog_edit_journal`               | Edit a journal stop's title, text, or date/time (or the journal summary)                                                       |
+| `wanderlog_remove_journal`             | Remove a journal stop by title (with an optional date filter)                                                                  |
 
 ### Managing custom lists
 
