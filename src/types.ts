@@ -525,6 +525,8 @@ export type HotelPriceBucket = {
 export type HotelAvailableFilters = {
   hotel_classes: Record<string, number>;
   amenities: Record<string, number>;
+  /** Amenity facets left out of a concise response; absent when all are listed. */
+  amenities_omitted?: number;
   lodging_types: Record<string, number>;
   accommodation_types: Record<string, number>;
   sources: Record<string, number>;
@@ -536,6 +538,8 @@ export type HotelSearchResult = {
   alternative_geos: HotelGeo[];
   currency: string;
   complete: boolean;
+  /** Retry guidance, present only when the search did not finish aggregating. */
+  note?: string;
   total_results: number;
   returned: number;
   applied_filters: Record<string, unknown>;

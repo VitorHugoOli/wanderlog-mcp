@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   aggregateFacets,
   buildSearchBody,
@@ -358,7 +358,6 @@ describe("pollSearch", () => {
           offers: [makeOffer("A")],
         } as LodgingSearchResponse;
       },
-      limit: 10,
       maxRetries: 3,
       sleep: async () => {},
     });
@@ -367,23 +366,25 @@ describe("pollSearch", () => {
     expect(result.offers).toHaveLength(1);
   });
 
-  it("stops early when offers.length >= limit even if incomplete", async () => {
+  it("keeps polling until complete even when the first page already has enough offers", async () => {
     let calls = 0;
     const result = await pollSearch({
       fetchPage: async () => {
         calls++;
         return {
-          isComplete: false,
-          offers: [makeOffer("A"), makeOffer("B"), makeOffer("C")],
+          isComplete: calls === 2,
+          offers:
+            calls === 2
+              ? [makeOffer("A"), makeOffer("B"), makeOffer("C"), makeOffer("D")]
+              : [makeOffer("A"), makeOffer("B"), makeOffer("C")],
         } as LodgingSearchResponse;
       },
-      limit: 2,
       maxRetries: 3,
       sleep: async () => {},
     });
-    expect(calls).toBe(1);
-    expect(result.complete).toBe(false);
-    expect(result.offers).toHaveLength(3);
+    expect(calls).toBe(2);
+    expect(result.complete).toBe(true);
+    expect(result.offers).toHaveLength(4);
   });
 
   it("polls up to maxRetries then returns complete:false", async () => {
@@ -396,7 +397,6 @@ describe("pollSearch", () => {
           offers: [makeOffer("A")],
         } as LodgingSearchResponse;
       },
-      limit: 10,
       maxRetries: 3,
       sleep: async () => {},
     });
@@ -679,5 +679,93 @@ describe("searchHotels (handler)", () => {
     // Essentials still present:
     expect(conciseJson.offers[0].name).toBe("Hotel Pattaya");
     expect(conciseJson.offers[0].deals).toHaveLength(1);
+  });
+});
+
+describe("searchHotels property_name (Wanderlog ignores it server-side)", () => {
+  const names = [
+    "Pomelo Garden Boutique Villa",
+    "Hoi An Rustic Villa",
+    "Eco & Rustic Home Hoian",
+    "Hội An Ơi Homestay",
+    "Flora Riverside Villa",
+  ];
+  const ctx = handlerCtx({
+    searchLodgings: async () => ({ isComplete: true, offers: names.map(makeOffer) }),
+  });
+  const search = (property_name: string) =>
+    searchHotels(ctx, {
+      geo_id: 80,
+      check_in: "2026-11-10",
+      check_out: "2026-11-13",
+      property_name,
+    });
+
+  it("returns only properties whose name contains the searched text, case-insensitively", async () => {
+    const parsed = JSON.parse((await search("rustic")).content[0]!.text);
+    expect(parsed.offers.map((o: { name: string }) => o.name)).toEqual([
+      "Hoi An Rustic Villa",
+      "Eco & Rustic Home Hoian",
+    ]);
+    expect(parsed.total_results).toBe(2);
+  });
+
+  it("ignores accents and spaces, so 'Hoianoi' finds 'Hội An Ơi Homestay'", async () => {
+    const parsed = JSON.parse((await search("Hoianoi")).content[0]!.text);
+    expect(parsed.offers.map((o: { name: string }) => o.name)).toEqual(["Hội An Ơi Homestay"]);
+  });
+
+  it("returns no offers when no property matches", async () => {
+    const parsed = JSON.parse((await search("Grand Sunrise")).content[0]!.text);
+    expect(parsed.offers).toEqual([]);
+    expect(parsed.total_results).toBe(0);
+  });
+});
+
+describe("searchHotels response size and completeness", () => {
+  const manyAmenities = (count: number): LodgingOffer => ({
+    ...makeOffer("Amenity Palace"),
+    lodging: {
+      ...makeOffer("Amenity Palace").lodging,
+      amenities: Array.from({ length: count }, (_, i) => ({
+        name: `amenity ${i}`,
+        category: null,
+      })),
+    },
+  });
+
+  it("keeps only the 20 most common amenity facets in concise format, all of them in detailed", async () => {
+    const ctx = handlerCtx({
+      searchLodgings: async () => ({ isComplete: true, offers: [manyAmenities(30)] }),
+    });
+    const args = { geo_id: 80, check_in: "2026-11-10", check_out: "2026-11-13" };
+    const concise = JSON.parse((await searchHotels(ctx, args)).content[0]!.text);
+    const detailed = JSON.parse(
+      (await searchHotels(ctx, { ...args, response_format: "detailed" })).content[0]!.text,
+    );
+    expect(Object.keys(concise.available_filters.amenities)).toHaveLength(20);
+    expect(concise.available_filters.amenities_omitted).toBe(10);
+    expect(Object.keys(detailed.available_filters.amenities)).toHaveLength(30);
+    expect(detailed.available_filters.amenities_omitted).toBeUndefined();
+  });
+
+  it("tells the agent to call again when Wanderlog is still aggregating vendors", async () => {
+    vi.useFakeTimers();
+    try {
+      const ctx = handlerCtx({
+        searchLodgings: async () => ({ isComplete: false, offers: [makeOffer("Partial")] }),
+      });
+      const pending = searchHotels(ctx, {
+        geo_id: 80,
+        check_in: "2026-11-10",
+        check_out: "2026-11-13",
+      });
+      await vi.runAllTimersAsync();
+      const parsed = JSON.parse((await pending).content[0]!.text);
+      expect(parsed.complete).toBe(false);
+      expect(parsed.note).toMatch(/call .*again/i);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
