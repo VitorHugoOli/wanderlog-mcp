@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AppContext } from "../../src/context.ts";
 import { applyOp, type Json0Op } from "../../src/ot/apply.ts";
-import {
-  addNote,
-  addNoteInputSchema,
-} from "../../src/tools/add-note.ts";
+import { addNote, addNoteInputSchema } from "../../src/tools/add-note.ts";
 import type { TripPlan } from "../../src/types.ts";
 import { checklistTrip } from "../fixtures/checklist-trip.ts";
 
@@ -44,9 +41,9 @@ describe("addNoteInputSchema", () => {
     expect(addNoteInputSchema.safeParse(base).success).toBe(true);
     expect(addNoteInputSchema.safeParse({ ...base, day: "day 1" }).success).toBe(true);
     expect(addNoteInputSchema.safeParse({ ...base, section: "Notes" }).success).toBe(true);
-    expect(
-      addNoteInputSchema.safeParse({ ...base, day: "day 1", section: "Notes" }).success,
-    ).toBe(true);
+    expect(addNoteInputSchema.safeParse({ ...base, day: "day 1", section: "Notes" }).success).toBe(
+      true,
+    );
   });
 
   it("rejects empty target strings", () => {
@@ -65,13 +62,7 @@ describe("addNote section targeting", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain("places to visit");
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      1,
-      "blocks",
-      1,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 1, "blocks", 1]);
   });
 
   it("lets section override day when both targets are provided", async () => {
@@ -85,13 +76,7 @@ describe("addNote section targeting", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('section "Notes"');
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      0,
-      "blocks",
-      0,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
   });
 
   it("adds a note to a named undated section case-insensitively", async () => {
@@ -105,13 +90,7 @@ describe("addNote section targeting", () => {
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('section "Notes"');
     expect(submittedOps).toHaveLength(2);
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      0,
-      "blocks",
-      0,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
     expect((submittedOps[0]![0] as { li: { type: string } }).li.type).toBe("note");
     expect(submittedOps[1]![0]).toMatchObject({
       p: ["itinerary", "sections", 0, "blocks", 0, "text"],
@@ -130,13 +109,7 @@ describe("addNote section targeting", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('section "Places to visit"');
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      1,
-      "blocks",
-      1,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 1, "blocks", 1]);
   });
 
   it("rejects an unknown section without submitting operations", async () => {
@@ -164,13 +137,7 @@ describe("addNote section targeting", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('section "Notes"');
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      0,
-      "blocks",
-      0,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
   });
 
   it("rejects a dayPlan section even when it has no date", async () => {
@@ -199,12 +166,6 @@ describe("addNote section targeting", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain("day 2026-06-01");
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      2,
-      "blocks",
-      3,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 2, "blocks", 3]);
   });
 });

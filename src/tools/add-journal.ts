@@ -14,11 +14,7 @@ export const addJournalInputSchema = {
     .describe(
       "The place this journal stop is about (e.g. 'Marina Bay Sands', 'Gardens by the Bay'). Reuses a matching place already in the trip; if none matches, you'll be prompted to add it to the itinerary first (or pass allow_new_place).",
     ),
-  title: z
-    .string()
-    .min(1)
-    .optional()
-    .describe("Title for the stop. Defaults to the place name."),
+  title: z.string().min(1).optional().describe("Title for the stop. Defaults to the place name."),
   text: z
     .string()
     .optional()

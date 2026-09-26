@@ -5,7 +5,10 @@ import { addPlace } from "../../src/tools/add-place.ts";
 import { isPlaceBlock, type TripPlan } from "../../src/types.ts";
 import { checklistTrip } from "../fixtures/checklist-trip.ts";
 
-function makeFakeContext(trip: TripPlan, geos: Array<{ id: number; name: string; latitude: number; longitude: number }> = []): {
+function makeFakeContext(
+  trip: TripPlan,
+  geos: Array<{ id: number; name: string; latitude: number; longitude: number }> = [],
+): {
   ctx: AppContext;
   submittedOps: Json0Op[][];
 } {

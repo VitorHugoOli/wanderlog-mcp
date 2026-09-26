@@ -2,11 +2,7 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogNotFoundError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
-import {
-  findExpenseMatches,
-  formatCandidateList,
-  formatExpense,
-} from "./expenses-shared.js";
+import { findExpenseMatches, formatCandidateList, formatExpense } from "./expenses-shared.js";
 import { submitOp } from "./shared.js";
 
 export const removeExpenseInputSchema = {
@@ -80,9 +76,7 @@ export async function removeExpense(
       }
       const { index, expense } = matches[0]!;
       const expenseId = expense.id;
-      const ops: Json0Op[] = [
-        { p: ["itinerary", "budget", "expenses", index], ld: expense },
-      ];
+      const ops: Json0Op[] = [{ p: ["itinerary", "budget", "expenses", index], ld: expense }];
       await submit(ops);
       if (entry.snapshot.itinerary.budget?.expenses?.some((item) => item.id === expenseId)) {
         throw new WanderlogError("Removed expense is still present", "stale_target");

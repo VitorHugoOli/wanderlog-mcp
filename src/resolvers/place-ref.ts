@@ -116,8 +116,7 @@ export function resolvePlaceRef(trip: TripPlan, ref: string): PlaceRefResult {
 
   if (ordinal) {
     if (candidates.length === 0) return { kind: "none" };
-    const index =
-      ordinal.position === "last" ? candidates.length - 1 : ordinal.position - 1;
+    const index = ordinal.position === "last" ? candidates.length - 1 : ordinal.position - 1;
     if (index < 0 || index >= candidates.length) {
       return { kind: "none" };
     }
@@ -193,11 +192,7 @@ function firstBlockOfSectionType(
   return [];
 }
 
-function matchPlaceName(
-  trip: TripPlan,
-  ref: string,
-  mode: "exact" | "substring",
-): PlaceRefMatch[] {
+function matchPlaceName(trip: TripPlan, ref: string, mode: "exact" | "substring"): PlaceRefMatch[] {
   const matches: PlaceRefMatch[] = [];
   const sections = trip.itinerary.sections;
   for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
@@ -260,5 +255,8 @@ function finalize(candidates: PlaceRefMatch[]): PlaceRefResult {
 function normalize(s: string): string {
   // Collapse runs of whitespace and punctuation dashes (hyphens, en/em-dashes)
   // so "Roppongi Hills - Tokyo City View" matches "Roppongi Hills Tokyo City View".
-  return s.replace(/[\s\-–—]+/g, " ").trim().toLowerCase();
+  return s
+    .replace(/[\s\-–—]+/g, " ")
+    .trim()
+    .toLowerCase();
 }

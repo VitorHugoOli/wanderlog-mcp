@@ -2,17 +2,10 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
-import {
-  isCustomSection,
-  resolveSectionRef,
-  submitOp,
-} from "./shared.js";
+import { isCustomSection, resolveSectionRef, submitOp } from "./shared.js";
 
 export const deleteSectionInputSchema = {
-  trip_key: z
-    .string()
-    .min(1)
-    .describe("The trip to delete the section from."),
+  trip_key: z.string().min(1).describe("The trip to delete the section from."),
   section: z
     .string()
     .min(1)
@@ -59,12 +52,11 @@ export async function deleteSection(
       const found = resolved.match;
       const { index, section } = found;
       if (!isCustomSection(trip, index)) {
-        const reason = section.mode === "dayPlan"
-          ? `Day sections cannot be deleted here. Use wanderlog_update_trip_dates to change the trip's date range instead.`
-          : `The "${section.heading || section.type}" section is a default or system section and cannot be deleted.`;
-        throw new WanderlogValidationError(
-          reason,
-        );
+        const reason =
+          section.mode === "dayPlan"
+            ? `Day sections cannot be deleted here. Use wanderlog_update_trip_dates to change the trip's date range instead.`
+            : `The "${section.heading || section.type}" section is a default or system section and cannot be deleted.`;
+        throw new WanderlogValidationError(reason);
       }
       const sectionId = section.id;
       const ops: Json0Op[] = [{ p: ["itinerary", "sections", index], ld: section }];

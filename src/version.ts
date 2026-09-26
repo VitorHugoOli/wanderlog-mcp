@@ -17,9 +17,9 @@ import { readFileSync } from "node:fs";
  * npm always includes package.json in the published tarball, so this is
  * available at runtime regardless of the `files` allowlist.
  */
-const pkg = JSON.parse(
-  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
-) as { version?: unknown };
+const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+  version?: unknown;
+};
 
 if (typeof pkg.version !== "string" || pkg.version.length === 0) {
   throw new Error("Could not read a version string from package.json");

@@ -40,9 +40,7 @@ describe("validateDateRange", () => {
   });
 
   it("rejects start after end", () => {
-    expect(() => validateDateRange("2026-05-10", "2026-05-05")).toThrow(
-      WanderlogValidationError,
-    );
+    expect(() => validateDateRange("2026-05-10", "2026-05-05")).toThrow(WanderlogValidationError);
   });
 });
 

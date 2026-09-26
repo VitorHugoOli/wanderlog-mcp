@@ -42,9 +42,7 @@ export class RestClient {
     const url = `${this.config.baseUrl}${path}`;
     const init: Parameters<typeof fetch>[1] = {
       method,
-      headers: this.headers(
-        opts.body !== undefined ? { "Content-Type": "application/json" } : {},
-      ),
+      headers: this.headers(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
     };
     if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
 
@@ -90,9 +88,7 @@ export class RestClient {
   async getUser(): Promise<User> {
     const env = await this.request<Envelope<{ user?: User }>>("GET", "/api/user");
     if (!env.user || typeof env.user.id !== "number") {
-      throw new WanderlogAuthError(
-        "No user returned for current session — cookie may be invalid",
-      );
+      throw new WanderlogAuthError("No user returned for current session — cookie may be invalid");
     }
     return env.user;
   }
@@ -118,9 +114,7 @@ export class RestClient {
     return tripPlan;
   }
 
-  async getTripWithResources(
-    tripKey: string,
-  ): Promise<{ tripPlan: TripPlan; geos: Geo[] }> {
+  async getTripWithResources(tripKey: string): Promise<{ tripPlan: TripPlan; geos: Geo[] }> {
     const env = await this.request<
       Envelope<{
         tripPlan?: TripPlan;
@@ -157,9 +151,7 @@ export class RestClient {
     );
     // The endpoint mixes in entries with no place_id. Callers take the first
     // result, so one of those ahead of a real place became "Place not found".
-    return (env.data ?? []).filter(
-      (p) => typeof p?.place_id === "string" && p.place_id.length > 0,
-    );
+    return (env.data ?? []).filter((p) => typeof p?.place_id === "string" && p.place_id.length > 0);
   }
 
   /**
@@ -193,9 +185,7 @@ export class RestClient {
     return env.data;
   }
 
-  async geoAutocomplete(
-    query: string,
-  ): Promise<
+  async geoAutocomplete(query: string): Promise<
     Array<{
       id: number;
       name: string;
@@ -235,10 +225,7 @@ export class RestClient {
   async getGuidesForGeo(geoId: number): Promise<GuidesForGeoResponse> {
     const env = await this.request<
       Envelope<{ data?: { geoWithGoodGuides?: GuidesForGeoResponse } }>
-    >(
-      "GET",
-      `/api/tripPlans/browse/guides/${encodeURIComponent(String(geoId))}`,
-    );
+    >("GET", `/api/tripPlans/browse/guides/${encodeURIComponent(String(geoId))}`);
     const data = env.data?.geoWithGoodGuides;
     if (!data) {
       throw new WanderlogNotFoundError("Guides", String(geoId));
@@ -264,9 +251,7 @@ export class RestClient {
     }
   }
 
-  async getGeo(
-    geoId: number,
-  ): Promise<{
+  async getGeo(geoId: number): Promise<{
     id: number;
     name: string;
     countryName?: string;
@@ -329,8 +314,7 @@ export class RestClient {
         minGuestRating: args.filters?.minGuestRating ?? null,
         propertyTypes: {
           lodgingTypes: args.filters?.propertyTypes?.lodgingTypes ?? null,
-          accommodationTypes:
-            args.filters?.propertyTypes?.accommodationTypes ?? null,
+          accommodationTypes: args.filters?.propertyTypes?.accommodationTypes ?? null,
         },
         hotelOrVacationRental: args.filters?.hotelOrVacationRental ?? "both",
         amenities: args.filters?.amenities ?? null,
@@ -388,9 +372,6 @@ export class RestClient {
   }
 
   async deleteTrip(tripKey: string): Promise<void> {
-    await this.request<Envelope<{}>>(
-      "DELETE",
-      `/api/tripPlans/${encodeURIComponent(tripKey)}`,
-    );
+    await this.request<Envelope<{}>>("DELETE", `/api/tripPlans/${encodeURIComponent(tripKey)}`);
   }
 }

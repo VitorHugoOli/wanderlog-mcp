@@ -57,7 +57,9 @@ export const addPlaceInputSchema = {
     .string()
     .regex(/^\d{2}:\d{2}$/, "must be HH:mm")
     .optional()
-    .describe("Optional start time in HH:mm format (e.g. '09:00'). Adds a scheduled time to the place."),
+    .describe(
+      "Optional start time in HH:mm format (e.g. '09:00'). Adds a scheduled time to the place.",
+    ),
   end_time: z
     .string()
     .regex(/^\d{2}:\d{2}$/, "must be HH:mm")
@@ -187,13 +189,7 @@ export async function addPlace(
         }
         const section = lockedEntry.snapshot.itinerary.sections[sectionIndex]!;
         const block = buildPlaceBlock(detail, userId);
-        const blockPath = [
-          "itinerary",
-          "sections",
-          sectionIndex,
-          "blocks",
-          section.blocks.length,
-        ];
+        const blockPath = ["itinerary", "sections", sectionIndex, "blocks", section.blocks.length];
         const insertOps: Json0Op[] = [{ p: blockPath, li: block }];
         if (imageKeys.length > 0) {
           insertOps.push({ p: [...blockPath, "imageKeys"], oi: imageKeys });
@@ -249,9 +245,7 @@ export async function addPlace(
       };
     });
 
-    const parts = [
-      `Added ${detail.name} to ${mutation.labelList} in "${mutation.tripTitle}".`,
-    ];
+    const parts = [`Added ${detail.name} to ${mutation.labelList} in "${mutation.tripTitle}".`];
     if (args.start_time) {
       parts.push(`Scheduled: ${args.start_time}${args.end_time ? `–${args.end_time}` : ""}.`);
     }

@@ -2,18 +2,15 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
-import {
-  buildSectionObject,
-  resolveSectionRef,
-  requireUserId,
-  submitOp,
-} from "./shared.js";
+import { buildSectionObject, resolveSectionRef, requireUserId, submitOp } from "./shared.js";
 
 export const addSectionInputSchema = {
   trip_key: z
     .string()
     .min(1)
-    .describe("The trip to add the section to. Use wanderlog_list_trips if you don't know the key."),
+    .describe(
+      "The trip to add the section to. Use wanderlog_list_trips if you don't know the key.",
+    ),
   heading: z
     .string()
     .optional()
@@ -62,9 +59,9 @@ export async function addSection(
         normalizedHeading === "places" ||
         normalizedHeading === "places to visit" ||
         trip.itinerary.sections.some(
-        (section) =>
-          section.mode !== "dayPlan" &&
-          section.heading.trim().toLowerCase() === normalizedHeading,
+          (section) =>
+            section.mode !== "dayPlan" &&
+            section.heading.trim().toLowerCase() === normalizedHeading,
         );
       if (duplicate) {
         throw new WanderlogValidationError(
@@ -97,9 +94,7 @@ export async function addSection(
     });
 
     const headingLabel = heading || "(untitled)";
-    const positionLabel = args.after_section
-      ? `after "${args.after_section}"`
-      : "at the end";
+    const positionLabel = args.after_section ? `after "${args.after_section}"` : "at the end";
     const text = `Added section "${headingLabel}" ${positionLabel} in "${tripTitle}".`;
     return { content: [{ type: "text", text }] };
   } catch (err) {

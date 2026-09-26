@@ -115,9 +115,7 @@ describe("buildNoteReplaceDelta", () => {
   });
 
   it("emits no delete when the note is empty", () => {
-    expect(buildNoteReplaceDelta({ ops: [{ insert: "\n" }] }, "new")).toEqual([
-      { insert: "new" },
-    ]);
+    expect(buildNoteReplaceDelta({ ops: [{ insert: "\n" }] }, "new")).toEqual([{ insert: "new" }]);
   });
 
   it("adds a trailing newline when the existing text has none", () => {

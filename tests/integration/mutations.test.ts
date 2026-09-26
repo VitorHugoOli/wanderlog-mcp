@@ -145,15 +145,9 @@ describe("Mutation tools (live round-trip)", () => {
     const originalIds = originalBlocks.map((block) => block.id);
     expect(originalIds).toHaveLength(3);
     expect(originalBlocks.every(isPlaceBlock)).toBe(true);
-    const firstName = isPlaceBlock(originalBlocks[0]!)
-      ? originalBlocks[0]!.place.name
-      : "";
-    const secondName = isPlaceBlock(originalBlocks[1]!)
-      ? originalBlocks[1]!.place.name
-      : "";
-    const thirdName = isPlaceBlock(originalBlocks[2]!)
-      ? originalBlocks[2]!.place.name
-      : "";
+    const firstName = isPlaceBlock(originalBlocks[0]!) ? originalBlocks[0]!.place.name : "";
+    const secondName = isPlaceBlock(originalBlocks[1]!) ? originalBlocks[1]!.place.name : "";
+    const thirdName = isPlaceBlock(originalBlocks[2]!) ? originalBlocks[2]!.place.name : "";
 
     const backward = await moveBlock(ctx, {
       trip_key: tripKey!,
@@ -174,9 +168,7 @@ describe("Mutation tools (live round-trip)", () => {
       originalIds[1],
     ]);
     for (const original of originalBlocks) {
-      expect(backwardBlocks.find((block) => block.id === original.id)).toEqual(
-        original,
-      );
+      expect(backwardBlocks.find((block) => block.id === original.id)).toEqual(original);
     }
 
     const forward = await moveBlock(ctx, {
@@ -194,9 +186,7 @@ describe("Mutation tools (live round-trip)", () => {
     )!.blocks;
     expect(forwardBlocks.map((block) => block.id)).toEqual(originalIds);
     for (const original of originalBlocks) {
-      expect(forwardBlocks.find((block) => block.id === original.id)).toEqual(
-        original,
-      );
+      expect(forwardBlocks.find((block) => block.id === original.id)).toEqual(original);
     }
   }, 90_000);
 
@@ -263,7 +253,11 @@ describe("Mutation tools (live round-trip)", () => {
     expect(day1).toBeDefined();
     const noteBlock = day1!.blocks.find((b) => b.type === "note") as NoteBlock | undefined;
     expect(noteBlock).toBeDefined();
-    expect(noteBlock!.text?.ops?.some((op) => typeof op.insert === "string" && op.insert.includes("sunscreen"))).toBe(true);
+    expect(
+      noteBlock!.text?.ops?.some(
+        (op) => typeof op.insert === "string" && op.insert.includes("sunscreen"),
+      ),
+    ).toBe(true);
   }, 30_000);
 
   it("add_note adds a note to the unscheduled list", async () => {

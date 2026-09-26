@@ -1,15 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import {
-  WanderlogError,
-  WanderlogValidationError,
-} from "../errors.js";
+import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
-import {
-  resolvePlaceRef,
-  type PlaceRefMatch,
-} from "../resolvers/place-ref.js";
+import { resolvePlaceRef, type PlaceRefMatch } from "../resolvers/place-ref.js";
 import type { Block, Section, TripPlan } from "../types.js";
 import { isPlaceBlock, isTransitBlock } from "../types.js";
 import { submitOp } from "./shared.js";
@@ -48,9 +42,7 @@ export const moveBlockInputSchema = z
   })
   .refine(
     (args) =>
-      [args.position, args.before, args.after].filter(
-        (value) => value !== undefined,
-      ).length === 1,
+      [args.position, args.before, args.after].filter((value) => value !== undefined).length === 1,
     {
       message: "Provide exactly one of position, before, or after.",
     },
@@ -98,24 +90,20 @@ export async function moveBlock(
       );
     }
 
-    const outcome = await submitOp(
-      ctx,
-      parsed.data.trip_key,
-      async (entry, submit) => {
-        const prepared = buildMove(entry.snapshot, parsed.data);
-        if (prepared.ops.length === 0) {
-          return prepared.afterApply(entry.snapshot);
-        }
+    const outcome = await submitOp(ctx, parsed.data.trip_key, async (entry, submit) => {
+      const prepared = buildMove(entry.snapshot, parsed.data);
+      if (prepared.ops.length === 0) {
+        return prepared.afterApply(entry.snapshot);
+      }
 
-        await submit(prepared.ops);
-        try {
-          return prepared.afterApply(entry.snapshot);
-        } catch (err) {
-          ctx.tripCache.invalidate(parsed.data.trip_key);
-          throw err;
-        }
-      },
-    );
+      await submit(prepared.ops);
+      try {
+        return prepared.afterApply(entry.snapshot);
+      } catch (err) {
+        ctx.tripCache.invalidate(parsed.data.trip_key);
+        throw err;
+      }
+    });
 
     const text = outcome.moved
       ? `Moved ${outcome.blockName} from position ${outcome.fromPosition} to position ${outcome.toPosition} in ${outcome.sectionLabel} of "${outcome.tripTitle}".`
@@ -168,11 +156,9 @@ function buildMove(
 
     const targetIndex = target.blockIndex;
     if (relation === "before") {
-      destinationIndex =
-        targetIndex < sourceIndex ? targetIndex : targetIndex - 1;
+      destinationIndex = targetIndex < sourceIndex ? targetIndex : targetIndex - 1;
     } else {
-      destinationIndex =
-        targetIndex < sourceIndex ? targetIndex + 1 : targetIndex;
+      destinationIndex = targetIndex < sourceIndex ? targetIndex + 1 : targetIndex;
     }
   }
 
@@ -190,13 +176,7 @@ function buildMove(
       ? []
       : [
           {
-            p: [
-              "itinerary",
-              "sections",
-              source.sectionIndex,
-              "blocks",
-              sourceIndex,
-            ],
+            p: ["itinerary", "sections", source.sectionIndex, "blocks", sourceIndex],
             lm: destinationIndex,
           },
         ];
@@ -224,11 +204,7 @@ function buildMove(
   };
 }
 
-function resolveUniqueBlock(
-  trip: TripPlan,
-  ref: string,
-  label: string,
-): PlaceRefMatch {
+function resolveUniqueBlock(trip: TripPlan, ref: string, label: string): PlaceRefMatch {
   const result = resolvePlaceRef(trip, ref);
   if (result.kind === "none") {
     throw new WanderlogValidationError(

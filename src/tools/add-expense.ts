@@ -7,14 +7,8 @@ import { isPlaceBlock } from "../types.js";
 import { generateBlockId, requireUserId, submitOp } from "./shared.js";
 
 export const addExpenseInputSchema = {
-  trip_key: z
-    .string()
-    .min(1)
-    .describe("The trip to add the expense to."),
-  amount: z
-    .number()
-    .positive()
-    .describe("Cost amount (e.g. 50, 12.50)."),
+  trip_key: z.string().min(1).describe("The trip to add the expense to."),
+  amount: z.number().positive().describe("Cost amount (e.g. 50, 12.50)."),
   currency: z
     .string()
     .min(3)
@@ -139,8 +133,7 @@ export async function addExpense(
         associatedDate: associatedDate ?? expenseDate,
       };
       const budget = (trip.itinerary as Record<string, unknown>).budget as
-        | Record<string, unknown>
-        | undefined;
+        Record<string, unknown> | undefined;
       const expenses = (budget?.expenses as unknown[] | undefined) ?? [];
       const ops: Json0Op[] = [
         {

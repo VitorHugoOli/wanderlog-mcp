@@ -166,13 +166,7 @@ export function isRentalCarBlock(block: Block): block is RentalCarBlock {
 }
 
 export type SectionType =
-  | "textOnly"
-  | "normal"
-  | "hotels"
-  | "flights"
-  | "transit"
-  | "rentalCars"
-  | string;
+  "textOnly" | "normal" | "hotels" | "flights" | "transit" | "rentalCars" | string;
 
 export type Section = {
   id: number;

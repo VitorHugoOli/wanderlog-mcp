@@ -76,9 +76,7 @@ describe("buildSearchBody", () => {
     expect(body.filters?.hotelClasses).toEqual([4, 5]);
     expect(body.filters?.minGuestRating).toBe(8);
     expect(body.filters?.propertyTypes?.lodgingTypes).toEqual(["hotel"]);
-    expect(body.filters?.propertyTypes?.accommodationTypes).toEqual([
-      "entire_place",
-    ]);
+    expect(body.filters?.propertyTypes?.accommodationTypes).toEqual(["entire_place"]);
     expect(body.filters?.hotelOrVacationRental).toBe("hotel");
     expect(body.filters?.amenities).toEqual(["pool", "wifi"]);
     expect(body.filters?.minBedsInRoom).toBe(2);
@@ -100,11 +98,7 @@ describe("buildSearchBody", () => {
   });
 });
 
-function rate(
-  amount: number,
-  site: string,
-  opts: { freeCancel?: boolean; member?: boolean } = {},
-) {
+function rate(amount: number, site: string, opts: { freeCancel?: boolean; member?: boolean } = {}) {
   return {
     amount,
     currencyCode: "INR",
@@ -142,11 +136,7 @@ describe("projectOffer", () => {
     expect(projected.rating_count).toBe(200);
     expect(projected.location).toEqual({ lat: 12.93, lng: 100.91 });
     expect(projected.deals).toHaveLength(3);
-    expect(projected.deals.map((d) => d.vendor)).toEqual([
-      "Expedia",
-      "Google",
-      "Booking.com",
-    ]);
+    expect(projected.deals.map((d) => d.vendor)).toEqual(["Expedia", "Google", "Booking.com"]);
     expect(projected.deals[0]?.free_cancellation).toBe(true);
   });
 
@@ -299,7 +289,14 @@ describe("resolveGeo", () => {
           longitude: 0,
           bounds: [1, 2, 3, 4] as [number, number, number, number],
         },
-        { id: 3, name: "Pattaya Beach", countryName: "Thailand", popularity: 50, latitude: 0, longitude: 0 },
+        {
+          id: 3,
+          name: "Pattaya Beach",
+          countryName: "Thailand",
+          popularity: 50,
+          latitude: 0,
+          longitude: 0,
+        },
       ],
     });
     const result = await resolveGeo(ctx, { destination: "Pattaya" });
