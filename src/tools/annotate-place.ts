@@ -3,8 +3,16 @@ import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
 import { resolvePlaceRef } from "../resolvers/place-ref.js";
-import { isPlaceBlock } from "../types.js";
-import { assertBlockAtPath, findBlockById, submitOp, validateTimeInputs } from "./shared.js";
+import { isPlaceBlock, type QuillDelta } from "../types.js";
+import { extractDeltaText } from "./remove-note.js";
+import {
+  assertBlockAtPath,
+  buildNoteReplaceDelta,
+  findBlockById,
+  normalizeNote,
+  submitOp,
+  validateTimeInputs,
+} from "./shared.js";
 
 export const annotatePlaceInputSchema = {
   trip_key: z
@@ -104,7 +112,12 @@ export async function annotatePlace(
       if (args.note) {
         const current = findBlockById(entry.snapshot, blockId);
         if (!current) throw new WanderlogError("Place moved or was removed", "stale_target");
-        assertBlockAtPath(entry.snapshot, current.sectionIndex, current.blockIndex, blockId);
+        const target = assertBlockAtPath(
+          entry.snapshot,
+          current.sectionIndex,
+          current.blockIndex,
+          blockId,
+        );
         const textOps: Json0Op[] = [
           {
             p: [
@@ -116,7 +129,7 @@ export async function annotatePlace(
               "text",
             ],
             t: "rich-text",
-            o: [{ insert: `${args.note}\n` }],
+            o: buildNoteReplaceDelta((target as { text?: QuillDelta }).text, args.note),
           },
         ];
         await submit(textOps);
@@ -158,14 +171,10 @@ export async function annotatePlace(
         throw new WanderlogError("Updated place could not be verified", "stale_target");
       }
       const record = updated as Record<string, unknown>;
-      const textValue = record.text as
-        | { ops?: Array<{ insert?: unknown }> }
-        | undefined;
-      const noteText = textValue?.ops
-        ?.map((op) => (typeof op.insert === "string" ? op.insert : ""))
-        .join("");
+      // Equality, not `includes`: an appended note still contains the new text.
+      const noteText = normalizeNote(extractDeltaText(record.text as QuillDelta | undefined));
       if (
-        (args.note && !noteText?.includes(args.note)) ||
+        (args.note && noteText !== normalizeNote(args.note)) ||
         (args.start_time && record.startTime !== args.start_time) ||
         (args.end_time && record.endTime !== args.end_time)
       ) {

@@ -4,6 +4,7 @@ import { addChecklist } from "../../src/tools/add-checklist.ts";
 import { addHotel } from "../../src/tools/add-hotel.ts";
 import { addNote } from "../../src/tools/add-note.ts";
 import { addPlace } from "../../src/tools/add-place.ts";
+import { annotatePlace } from "../../src/tools/annotate-place.ts";
 import { addSection } from "../../src/tools/add-section.ts";
 import { createTrip } from "../../src/tools/create-trip.ts";
 import { deleteSection } from "../../src/tools/delete-section.ts";
@@ -98,6 +99,26 @@ describe("Mutation tools (live round-trip)", () => {
         s.blocks.some((b) => isPlaceBlock(b) && /castelo/i.test(b.place.name)),
     );
     expect(foundInDay1).toBe(true);
+  }, 30_000);
+
+  it("annotate_place replaces the castle's note instead of appending to it", async () => {
+    expect(tripKey).toBeDefined();
+    for (const note of ["NOT YET BOOKED", "BOOKED for 10:00"]) {
+      const result = await annotatePlace(ctx, { trip_key: tripKey!, place: "Castelo", note });
+      if (result.isError) {
+        throw new Error(`annotate_place failed: ${result.content[0]!.text}`);
+      }
+    }
+
+    const trip = await ctx.rest.getTrip(tripKey!);
+    const castle = trip.itinerary.sections
+      .flatMap((s) => s.blocks)
+      .find((b) => isPlaceBlock(b) && /castelo/i.test(b.place.name));
+    if (!castle || !isPlaceBlock(castle)) throw new Error("castle not found");
+    const noteText = castle.text?.ops
+      ?.map((op) => (typeof op.insert === "string" ? op.insert : ""))
+      .join("");
+    expect(noteText).toBe("BOOKED for 10:00\n");
   }, 30_000);
 
   it("move_block reorders day places in both directions without changing their blocks", async () => {

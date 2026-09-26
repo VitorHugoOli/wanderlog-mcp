@@ -8,6 +8,7 @@ import type {
   ChecklistItem,
   Geo,
   PlaceData,
+  QuillDelta,
   RentalCarEndpoint,
   Section,
   TransitEndpoint,
@@ -685,4 +686,39 @@ export function validateDateRange(startDate: string, endDate: string): void {
       `end_date (${endDate}) must be on or after start_date (${startDate}).`,
     );
   }
+}
+
+/**
+ * Length in Quill units, where an embed counts as one. Sizing a delete off the
+ * plain text instead leaves part of the old note behind when it holds an image.
+ */
+export function quillLength(delta: QuillDelta | undefined): number {
+  return (delta?.ops ?? []).reduce((total, op) => {
+    if (typeof op.insert === "string") return total + op.insert.length;
+    return op.insert === undefined ? total : total + 1;
+  }, 0);
+}
+
+export function normalizeNote(note: string): string {
+  return note.replace(/\n+$/, "");
+}
+
+/**
+ * A bare `insert` inserts at offset 0 rather than replacing, so the existing
+ * note has to be deleted explicitly. The document's trailing newline is kept
+ * and the replacement goes in ahead of it.
+ */
+export function buildNoteReplaceDelta(
+  existing: QuillDelta | undefined,
+  note: string,
+): Array<Record<string, unknown>> {
+  const lastInsert = existing?.ops?.at(-1)?.insert;
+  const keepsTerminator = typeof lastInsert === "string" && lastInsert.endsWith("\n");
+  const deleteLen = quillLength(existing) - (keepsTerminator ? 1 : 0);
+  const body = normalizeNote(note);
+
+  const ops: Array<Record<string, unknown>> = [];
+  if (deleteLen > 0) ops.push({ delete: deleteLen });
+  ops.push({ insert: keepsTerminator ? body : `${body}\n` });
+  return ops;
 }
