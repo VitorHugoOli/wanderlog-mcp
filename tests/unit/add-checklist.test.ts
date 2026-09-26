@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type { AppContext } from "../../src/context.ts";
 import type { Json0Op } from "../../src/ot/apply.ts";
-import {
-  addChecklist,
-  addChecklistInputSchema,
-} from "../../src/tools/add-checklist.ts";
+import { addChecklist, addChecklistInputSchema } from "../../src/tools/add-checklist.ts";
 import type { TripPlan } from "../../src/types.ts";
 import { checklistTrip } from "../fixtures/checklist-trip.ts";
 
@@ -74,15 +71,11 @@ describe("addChecklistInputSchema", () => {
   });
 
   it("rejects checklist items that are not an array", () => {
-    expect(schema.safeParse({ ...requiredInput, items: "Passport" }).success).toBe(
-      false,
-    );
+    expect(schema.safeParse({ ...requiredInput, items: "Passport" }).success).toBe(false);
   });
 
   it("accepts a title", () => {
-    expect(schema.safeParse({ ...requiredInput, title: "Before departure" }).success).toBe(
-      true,
-    );
+    expect(schema.safeParse({ ...requiredInput, title: "Before departure" }).success).toBe(true);
   });
 
   it("accepts an empty title", () => {
@@ -102,9 +95,7 @@ describe("addChecklistInputSchema", () => {
   });
 
   it("accepts a named section target", () => {
-    expect(
-      schema.safeParse({ ...requiredInput, section: "Trip Preparations" }).success,
-    ).toBe(true);
+    expect(schema.safeParse({ ...requiredInput, section: "Trip Preparations" }).success).toBe(true);
   });
 
   it("rejects an empty section target", () => {
@@ -159,13 +150,7 @@ describe("addChecklist section targeting", () => {
     const { result, submittedOps } = await runChecklist();
 
     expect(result.isError).toBeUndefined();
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      1,
-      "blocks",
-      1,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 1, "blocks", 1]);
   });
 
   it("succeeds for a case-insensitive named section", async () => {
@@ -192,13 +177,7 @@ describe("addChecklist section targeting", () => {
     const { result, submittedOps } = await runChecklist({ section: "notes" });
 
     expect(result.isError).toBeUndefined();
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      0,
-      "blocks",
-      0,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
   });
 
   it("inserts a checklist block into the named section", async () => {
@@ -241,13 +220,7 @@ describe("addChecklist section targeting", () => {
     });
 
     expect(result.isError).toBeUndefined();
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      0,
-      "blocks",
-      0,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
   });
 
   it("returns an error for an unknown section", async () => {
@@ -301,10 +274,7 @@ describe("addChecklist section targeting", () => {
   it("does not submit when section targets a dayPlan", async () => {
     const trip = structuredClone(checklistTrip);
     trip.itinerary.sections[2]!.date = null;
-    const { result, submittedOps } = await runChecklist(
-      { section: "Arrival day" },
-      trip,
-    );
+    const { result, submittedOps } = await runChecklist({ section: "Arrival day" }, trip);
 
     expect(result.isError).toBe(true);
     expect(submittedOps).toHaveLength(0);
@@ -327,12 +297,6 @@ describe("addChecklist section targeting", () => {
     const { result, submittedOps } = await runChecklist({ day: "day 1" });
 
     expect(result.isError).toBeUndefined();
-    expect(submittedOps[0]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      2,
-      "blocks",
-      3,
-    ]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 2, "blocks", 3]);
   });
 });

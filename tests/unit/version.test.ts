@@ -10,9 +10,9 @@ import { VERSION } from "../../src/version.js";
  * derived from package.json; these tests fail if that derivation breaks.
  */
 describe("VERSION", () => {
-  const pkg = JSON.parse(
-    readFileSync(new URL("../../package.json", import.meta.url), "utf8"),
-  ) as { version: string };
+  const pkg = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")) as {
+    version: string;
+  };
 
   it("matches the version in package.json", () => {
     expect(VERSION).toBe(pkg.version);

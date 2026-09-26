@@ -38,11 +38,7 @@ describe("concurrent mutation identity", () => {
             mode: "placeList",
             heading: "Transit",
             date: null,
-            blocks: [
-              { id: 101, type: "train", text: { ops: [{ insert: "\n" }] } },
-              target,
-              decoy,
-            ],
+            blocks: [{ id: 101, type: "train", text: { ops: [{ insert: "\n" }] } }, target, decoy],
           },
         ],
       },
@@ -90,14 +86,7 @@ describe("concurrent mutation identity", () => {
     const [removeResult, annotateResult] = await Promise.all([removal, annotation]);
     expect(removeResult.isError).toBeUndefined();
     expect(annotateResult.isError).toBeUndefined();
-    expect(submitted[1]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      0,
-      "blocks",
-      0,
-      "text",
-    ]);
+    expect(submitted[1]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0, "text"]);
 
     const blocks = entry.snapshot.itinerary.sections[0]!.blocks;
     expect(blocks.map((block) => block.id)).toEqual([target.id, decoy.id]);
@@ -175,14 +164,7 @@ describe("concurrent mutation identity", () => {
 
     expect(result.isError).toBeUndefined();
     expect(submitted).toHaveLength(2);
-    expect(submitted[1]![0]!.p).toEqual([
-      "itinerary",
-      "sections",
-      0,
-      "blocks",
-      1,
-      "text",
-    ]);
+    expect(submitted[1]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 1, "text"]);
     const blocks = entry.snapshot.itinerary.sections[0]!.blocks;
     expect(blocks[0]!.id).toBe(404);
     expect(blocks[0]!.text?.ops[0]!.insert).toBe("shift\n");

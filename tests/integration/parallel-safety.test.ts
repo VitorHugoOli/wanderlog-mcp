@@ -138,9 +138,7 @@ describe("Parallel write safety (live)", () => {
     if (annotateResult.isError) throw new Error(annotateResult.content[0]!.text);
 
     const finalTrip = await ctx.rest.getTrip(tripKey!);
-    const finalBlocks = finalTrip.itinerary.sections.flatMap(
-      (section) => section.blocks,
-    );
+    const finalBlocks = finalTrip.itinerary.sections.flatMap((section) => section.blocks);
     expect(finalBlocks.some((block) => block.id === removed.id)).toBe(false);
     const finalTarget = finalBlocks.find((block) => block.id === target.id);
     expect(finalTarget && isPlaceBlock(finalTarget)).toBe(true);
@@ -150,9 +148,7 @@ describe("Parallel write safety (live)", () => {
     expect(finalTarget.startTime).toBe("14:15");
     expect(finalTarget.endTime).toBe("15:30");
     expect(
-      finalTarget.text?.ops
-        .map((op) => (typeof op.insert === "string" ? op.insert : ""))
-        .join(""),
+      finalTarget.text?.ops.map((op) => (typeof op.insert === "string" ? op.insert : "")).join(""),
     ).toContain(note);
   }, 90_000);
 });

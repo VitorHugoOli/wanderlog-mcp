@@ -2,18 +2,15 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
-import {
-  buildChecklistBlock,
-  findBlockTargetSection,
-  requireUserId,
-  submitOp,
-} from "./shared.js";
+import { buildChecklistBlock, findBlockTargetSection, requireUserId, submitOp } from "./shared.js";
 
 export const addChecklistInputSchema = {
   trip_key: z
     .string()
     .min(1)
-    .describe("The trip to add the checklist to. Use wanderlog_list_trips if you don't know the key."),
+    .describe(
+      "The trip to add the checklist to. Use wanderlog_list_trips if you don't know the key.",
+    ),
   items: z
     .array(z.string().min(1))
     .min(1)
@@ -21,7 +18,9 @@ export const addChecklistInputSchema = {
   title: z
     .string()
     .optional()
-    .describe("Optional title for the checklist (e.g. 'Packing list'). Omit for an untitled checklist."),
+    .describe(
+      "Optional title for the checklist (e.g. 'Packing list'). Omit for an untitled checklist.",
+    ),
   day: z
     .string()
     .optional()
@@ -73,13 +72,7 @@ export async function addChecklist(
       const block = buildChecklistBlock(args.items, args.title ?? "", userId);
       const ops: Json0Op[] = [
         {
-          p: [
-            "itinerary",
-            "sections",
-            target.index,
-            "blocks",
-            target.section.blocks.length,
-          ],
+          p: ["itinerary", "sections", target.index, "blocks", target.section.blocks.length],
           li: block,
         },
       ];

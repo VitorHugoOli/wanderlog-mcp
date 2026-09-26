@@ -24,10 +24,7 @@ import { isPlaceBlock } from "../types.js";
  */
 const submitLocks = new Map<string, Promise<unknown>>();
 
-async function withSubmitLock<T>(
-  tripKey: string,
-  fn: () => Promise<T>,
-): Promise<T> {
+async function withSubmitLock<T>(tripKey: string, fn: () => Promise<T>): Promise<T> {
   const prev = submitLocks.get(tripKey) ?? Promise.resolve();
   // Chain regardless of whether the previous op succeeded or failed —
   // one failed op should not permanently block the queue.
@@ -55,10 +52,7 @@ async function withSubmitLock<T>(
 export async function submitOp<T>(
   ctx: AppContext,
   tripKey: string,
-  mutate: (
-    entry: CacheEntry,
-    submit: (ops: Json0Op[]) => Promise<void>,
-  ) => Promise<T> | T,
+  mutate: (entry: CacheEntry, submit: (ops: Json0Op[]) => Promise<void>) => Promise<T> | T,
 ): Promise<T> {
   return withSubmitLock(tripKey, async () => {
     const entry = await ctx.tripCache.getEntry(tripKey);
@@ -66,10 +60,7 @@ export async function submitOp<T>(
     const submit = async (ops: Json0Op[]): Promise<void> => {
       try {
         if (!client.isSubscribed) {
-          throw new WanderlogError(
-            `Trip ${tripKey} is not subscribed`,
-            "not_subscribed",
-          );
+          throw new WanderlogError(`Trip ${tripKey} is not subscribed`, "not_subscribed");
         }
         await submitWithRateLimitRetry(client, ops);
       } catch (err) {
@@ -99,10 +90,7 @@ const CONFIRMED_NON_APPLICATION_CODES = new Set([
 ]);
 
 function isConfirmedNonApplication(err: unknown): boolean {
-  return (
-    err instanceof WanderlogError &&
-    CONFIRMED_NON_APPLICATION_CODES.has(err.code)
-  );
+  return err instanceof WanderlogError && CONFIRMED_NON_APPLICATION_CODES.has(err.code);
 }
 
 const RATE_LIMIT_RETRY_DELAYS_MS = [2_000, 4_000, 8_000];
@@ -121,14 +109,11 @@ async function submitWithRateLimitRetry(
       await client.submit(ops);
       return;
     } catch (err) {
-      const isRateLimit =
-        err instanceof WanderlogError && err.code === "rate_limited";
+      const isRateLimit = err instanceof WanderlogError && err.code === "rate_limited";
       if (!isRateLimit || attempt >= RATE_LIMIT_RETRY_DELAYS_MS.length) {
         throw err;
       }
-      await new Promise((r) =>
-        setTimeout(r, RATE_LIMIT_RETRY_DELAYS_MS[attempt]),
-      );
+      await new Promise((r) => setTimeout(r, RATE_LIMIT_RETRY_DELAYS_MS[attempt]));
       attempt += 1;
     }
   }
@@ -204,12 +189,7 @@ export function resolveSectionRef(trip: TripPlan, ref: string): SectionRefResult
   return { kind: "ambiguous", candidates };
 }
 
-const SYSTEM_SECTION_TYPES = new Set([
-  "hotels",
-  "flights",
-  "transit",
-  "rentalCars",
-]);
+const SYSTEM_SECTION_TYPES = new Set(["hotels", "flights", "transit", "rentalCars"]);
 
 export function isSystemSection(section: Section): boolean {
   return SYSTEM_SECTION_TYPES.has(section.type);
@@ -254,20 +234,14 @@ export function assertBlockAtPath(
 ): Block {
   const block = trip.itinerary.sections[sectionIndex]?.blocks[blockIndex];
   if (!block || block.id !== blockId) {
-    throw new WanderlogError(
-      `Block ${blockId} moved while preparing the mutation`,
-      "stale_target",
-    );
+    throw new WanderlogError(`Block ${blockId} moved while preparing the mutation`, "stale_target");
   }
   return block;
 }
 
 export function requireUserId(ctx: AppContext): number {
   if (ctx.userId == null) {
-    throw new WanderlogError(
-      "User ID not available — auth probe has not completed",
-      "no_user_id",
-    );
+    throw new WanderlogError("User ID not available — auth probe has not completed", "no_user_id");
   }
   return ctx.userId;
 }
@@ -370,10 +344,7 @@ export function findDaySectionByDate(
  *   2. The trip's first associated geo (from /api/tripPlans/{key} resources)
  *   3. Null if both are absent
  */
-export function findTripCenter(
-  trip: TripPlan,
-  geos?: Geo[],
-): { lat: number; lng: number } | null {
+export function findTripCenter(trip: TripPlan, geos?: Geo[]): { lat: number; lng: number } | null {
   for (const section of trip.itinerary.sections) {
     for (const block of section.blocks) {
       if (!isPlaceBlock(block)) continue;
@@ -396,10 +367,7 @@ export type TargetSection = {
   label: string;
 };
 
-export function findTargetSection(
-  trip: TripPlan,
-  day?: string,
-): TargetSection {
+export function findTargetSection(trip: TripPlan, day?: string): TargetSection {
   if (day) {
     const daySection = resolveDay(trip, day);
     const found = findDaySectionByDate(trip, daySection.date!);
@@ -672,9 +640,7 @@ export function isValidDate(dateStr: string): boolean {
   const [year, month, day] = dateStr.split("-").map((s) => parseInt(s, 10));
   const date = new Date(Date.UTC(year!, month! - 1, day!));
   return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month! - 1 &&
-    date.getUTCDate() === day
+    date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day
   );
 }
 

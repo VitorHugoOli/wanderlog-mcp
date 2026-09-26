@@ -2,17 +2,10 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
-import {
-  isCustomSection,
-  resolveSectionRef,
-  submitOp,
-} from "./shared.js";
+import { isCustomSection, resolveSectionRef, submitOp } from "./shared.js";
 
 export const updateSectionInputSchema = {
-  trip_key: z
-    .string()
-    .min(1)
-    .describe("The trip containing the section to update."),
+  trip_key: z.string().min(1).describe("The trip containing the section to update."),
   section: z
     .string()
     .min(1)
@@ -66,14 +59,13 @@ export async function updateSection(
       const found = resolved.match;
       const { index, section } = found;
       if (!isCustomSection(trip, index)) {
-        const reason = section.mode === "dayPlan"
-          ? `Day sections cannot be renamed here. Use wanderlog_rename_day to change a day's heading instead.`
-          : section.heading === "Places to visit"
-            ? `The "Places to visit" section cannot be renamed — it is the trip's default place list. Use wanderlog_get_trip to see your custom sections.`
-            : `The "${section.heading || section.type}" section is a system section and cannot be renamed. Use wanderlog_get_trip to see your custom sections.`;
-        throw new WanderlogValidationError(
-          reason,
-        );
+        const reason =
+          section.mode === "dayPlan"
+            ? `Day sections cannot be renamed here. Use wanderlog_rename_day to change a day's heading instead.`
+            : section.heading === "Places to visit"
+              ? `The "Places to visit" section cannot be renamed — it is the trip's default place list. Use wanderlog_get_trip to see your custom sections.`
+              : `The "${section.heading || section.type}" section is a system section and cannot be renamed. Use wanderlog_get_trip to see your custom sections.`;
+        throw new WanderlogValidationError(reason);
       }
       const oldHeading = section.heading;
       if (oldHeading === newHeading) {

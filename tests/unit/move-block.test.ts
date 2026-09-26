@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CacheEntry } from "../../src/cache/trip-cache.ts";
 import type { AppContext } from "../../src/context.ts";
 import { applyOp, type Json0Op } from "../../src/ot/apply.ts";
-import {
-  moveBlock,
-  moveBlockInputSchema,
-} from "../../src/tools/move-block.ts";
+import { moveBlock, moveBlockInputSchema } from "../../src/tools/move-block.ts";
 import type { Block, TripPlan } from "../../src/types.ts";
 
 function place(id: number, name: string): Block {
@@ -135,15 +132,9 @@ describe("moveBlockInputSchema", () => {
   const base = { trip_key: "trip", block: "Alpha Museum" };
 
   it("accepts each destination form", () => {
-    expect(
-      moveBlockInputSchema.safeParse({ ...base, position: 2 }).success,
-    ).toBe(true);
-    expect(
-      moveBlockInputSchema.safeParse({ ...base, before: "Bravo Cafe" }).success,
-    ).toBe(true);
-    expect(
-      moveBlockInputSchema.safeParse({ ...base, after: "Bravo Cafe" }).success,
-    ).toBe(true);
+    expect(moveBlockInputSchema.safeParse({ ...base, position: 2 }).success).toBe(true);
+    expect(moveBlockInputSchema.safeParse({ ...base, before: "Bravo Cafe" }).success).toBe(true);
+    expect(moveBlockInputSchema.safeParse({ ...base, after: "Bravo Cafe" }).success).toBe(true);
   });
 
   it("requires exactly one valid destination", () => {
@@ -155,21 +146,15 @@ describe("moveBlockInputSchema", () => {
         before: "Bravo Cafe",
       }).success,
     ).toBe(false);
-    expect(
-      moveBlockInputSchema.safeParse({ ...base, position: 0 }).success,
-    ).toBe(false);
-    expect(
-      moveBlockInputSchema.safeParse({ ...base, position: 1.5 }).success,
-    ).toBe(false);
+    expect(moveBlockInputSchema.safeParse({ ...base, position: 0 }).success).toBe(false);
+    expect(moveBlockInputSchema.safeParse({ ...base, position: 1.5 }).success).toBe(false);
   });
 });
 
 describe("moveBlock absolute positions", () => {
   it("counts notes in the complete displayed block order", async () => {
     const fake = makeFakeContext(fixture());
-    const original = structuredClone(
-      fake.currentTrip().itinerary.sections[1]!.blocks[2],
-    );
+    const original = structuredClone(fake.currentTrip().itinerary.sections[1]!.blocks[2]);
 
     const result = await moveBlock(fake.ctx, {
       trip_key: "trip",
@@ -187,9 +172,7 @@ describe("moveBlock absolute positions", () => {
       ],
     ]);
     expect(dayIds(fake.currentTrip())).toEqual([103, 101, 102, 104]);
-    expect(fake.currentTrip().itinerary.sections[1]!.blocks[0]).toEqual(
-      original,
-    );
+    expect(fake.currentTrip().itinerary.sections[1]!.blocks[0]).toEqual(original);
   });
 
   it("moves a block forward to the final position", async () => {
@@ -283,13 +266,7 @@ describe("moveBlock relative index calculations", () => {
 
       expect(result.isError).toBeUndefined();
       expect(fake.submittedOps[0]![0]).toMatchObject({
-        p: [
-          "itinerary",
-          "sections",
-          1,
-          "blocks",
-          testCase.op.source,
-        ],
+        p: ["itinerary", "sections", 1, "blocks", testCase.op.source],
         lm: testCase.op.destination,
       });
       expect(dayIds(fake.currentTrip())).toEqual(testCase.ids);

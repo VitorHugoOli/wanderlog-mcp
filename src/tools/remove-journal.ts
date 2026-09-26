@@ -58,9 +58,7 @@ export async function removeJournal(
       }
       const { index, stop } = matches[0]!;
       const stopId = stop.id;
-      const ops: Json0Op[] = [
-        { p: ["itinerary", "journal", "stops", index], ld: stop },
-      ];
+      const ops: Json0Op[] = [{ p: ["itinerary", "journal", "stops", index], ld: stop }];
       await submit(ops);
       if (entry.snapshot.itinerary.journal?.stops?.some((item) => item.id === stopId)) {
         throw new WanderlogError("Removed journal stop is still present", "stale_target");

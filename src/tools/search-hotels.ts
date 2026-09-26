@@ -13,18 +13,10 @@ import type {
   LodgingSearchResponse,
 } from "../types.js";
 import type { RestClient } from "../transport/rest.js";
-import {
-  WanderlogError,
-  WanderlogValidationError,
-} from "../errors.js";
+import { WanderlogError, WanderlogValidationError } from "../errors.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const SORT_VALUES = [
-  "ratings",
-  "price_low_to_high",
-  "price_high_to_low",
-  "deals",
-] as const;
+const SORT_VALUES = ["ratings", "price_low_to_high", "price_high_to_low", "deals"] as const;
 
 export const searchHotelsInputSchema = {
   destination: z
@@ -42,10 +34,7 @@ export const searchHotelsInputSchema = {
     .describe(
       "Explicit Wanderlog geo id (usually obtained from a prior search's 'geo' or 'alternative_geos').",
     ),
-  check_in: z
-    .string()
-    .regex(DATE_RE, "must be YYYY-MM-DD")
-    .describe("Check-in date, YYYY-MM-DD."),
+  check_in: z.string().regex(DATE_RE, "must be YYYY-MM-DD").describe("Check-in date, YYYY-MM-DD."),
   check_out: z
     .string()
     .regex(DATE_RE, "must be YYYY-MM-DD")
@@ -58,10 +47,7 @@ export const searchHotelsInputSchema = {
     .describe(
       "Ages of children. Wanderlog prices children by age, not count — pass each child's age (e.g. [4, 9]).",
     ),
-  sort_by: z
-    .enum(SORT_VALUES)
-    .default("ratings")
-    .describe("Result ordering."),
+  sort_by: z.enum(SORT_VALUES).default("ratings").describe("Result ordering."),
   limit: z
     .number()
     .int()
@@ -112,16 +98,8 @@ export const searchHotelsInputSchema = {
     .describe(
       "Required amenities; values come from 'available_filters.amenities' in a prior response.",
     ),
-  min_beds_in_room: z
-    .number()
-    .int()
-    .min(1)
-    .optional()
-    .describe("Minimum beds per room."),
-  property_name: z
-    .string()
-    .optional()
-    .describe("Substring match against the property name."),
+  min_beds_in_room: z.number().int().min(1).optional().describe("Minimum beds per room."),
+  property_name: z.string().optional().describe("Substring match against the property name."),
   vacation_rental_amenities: z
     .array(z.string())
     .optional()
@@ -131,9 +109,7 @@ export const searchHotelsInputSchema = {
   sources: z
     .array(z.string())
     .optional()
-    .describe(
-      "Override the default vendor set ['airbnb','expedia','google','kayak'].",
-    ),
+    .describe("Override the default vendor set ['airbnb','expedia','google','kayak']."),
   response_format: z
     .enum(["concise", "detailed"])
     .default("concise")
@@ -180,27 +156,20 @@ export type SearchHotelsArgs = {
   response_format?: "concise" | "detailed";
 };
 
-export function validateArgs(args: SearchHotelsArgs): Required<
+export function validateArgs(
+  args: SearchHotelsArgs,
+): Required<
   Pick<
     SearchHotelsArgs,
-    | "check_in"
-    | "check_out"
-    | "adult_count"
-    | "room_count"
-    | "children_ages"
-    | "sort_by"
-    | "limit"
+    "check_in" | "check_out" | "adult_count" | "room_count" | "children_ages" | "sort_by" | "limit"
   >
 > &
   SearchHotelsArgs {
-  const modesSet = [
-    args.destination !== undefined,
-    args.geo_id !== undefined,
-  ].filter(Boolean).length;
+  const modesSet = [args.destination !== undefined, args.geo_id !== undefined].filter(
+    Boolean,
+  ).length;
   if (modesSet !== 1) {
-    throw new WanderlogValidationError(
-      "Pass exactly one of destination or geo_id.",
-    );
+    throw new WanderlogValidationError("Pass exactly one of destination or geo_id.");
   }
   if (args.check_out <= args.check_in) {
     throw new WanderlogValidationError(
@@ -256,9 +225,7 @@ export function buildSearchBody(
 }
 
 function pickPrimaryDeal(rates: LodgingPriceRate[]): LodgingPriceRate {
-  return rates.reduce((cheapest, r) =>
-    r.amount < cheapest.amount ? r : cheapest,
-  );
+  return rates.reduce((cheapest, r) => (r.amount < cheapest.amount ? r : cheapest));
 }
 
 export function projectOffer(offer: LodgingOffer): HotelOffer {
@@ -284,9 +251,7 @@ export function projectOffer(offer: LodgingOffer): HotelOffer {
   }));
   const prices = rates.map((r) => r.amount);
   // Wanderlog returns amenities as objects {name, category}; surface the name strings.
-  const amenities = (offer.lodging.amenities ?? []).map(
-    (a: LodgingAmenity) => a.name,
-  );
+  const amenities = (offer.lodging.amenities ?? []).map((a: LodgingAmenity) => a.name);
   return {
     name: offer.lodging.name,
     url: primary.bookingUrl,
@@ -346,9 +311,7 @@ function quartileBuckets(prices: number[]): HotelPriceBucket[] {
   });
 }
 
-export function aggregateFacets(
-  offers: LodgingOffer[],
-): HotelAvailableFilters {
+export function aggregateFacets(offers: LodgingOffer[]): HotelAvailableFilters {
   const hotelClasses: Record<string, number> = {};
   const amenities: Record<string, number> = {};
   const lodgingTypes: Record<string, number> = {};
@@ -417,9 +380,7 @@ export async function resolveGeo(
       },
     );
   }
-  const ranked = [...candidates].sort(
-    (a, b) => (b.popularity ?? 0) - (a.popularity ?? 0),
-  );
+  const ranked = [...candidates].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0));
   const top = ranked[0]!;
   const alternatives = ranked.slice(1, 3).map((c) => ({
     geo_id: c.id,
@@ -471,16 +432,12 @@ function applied(args: SearchHotelsArgs): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   if (args.price_range) out.price_range = args.price_range;
   if (args.hotel_classes) out.hotel_classes = args.hotel_classes;
-  if (args.min_guest_rating !== undefined)
-    out.min_guest_rating = args.min_guest_rating;
+  if (args.min_guest_rating !== undefined) out.min_guest_rating = args.min_guest_rating;
   if (args.lodging_types) out.lodging_types = args.lodging_types;
-  if (args.accommodation_types)
-    out.accommodation_types = args.accommodation_types;
-  if (args.hotel_or_vacation_rental)
-    out.hotel_or_vacation_rental = args.hotel_or_vacation_rental;
+  if (args.accommodation_types) out.accommodation_types = args.accommodation_types;
+  if (args.hotel_or_vacation_rental) out.hotel_or_vacation_rental = args.hotel_or_vacation_rental;
   if (args.amenities) out.amenities = args.amenities;
-  if (args.min_beds_in_room !== undefined)
-    out.min_beds_in_room = args.min_beds_in_room;
+  if (args.min_beds_in_room !== undefined) out.min_beds_in_room = args.min_beds_in_room;
   if (args.property_name) out.property_name = args.property_name;
   if (args.vacation_rental_amenities)
     out.vacation_rental_amenities = args.vacation_rental_amenities;
@@ -517,11 +474,7 @@ export async function searchHotels(
     const projected = offers.map(projectOffer);
     const sliced = projected.slice(0, norm.limit);
     const facets = aggregateFacets(offers);
-    const currency =
-      norm.currency ??
-      projected[0]?.currency ??
-      ctx.config.defaultCurrency ??
-      "USD";
+    const currency = norm.currency ?? projected[0]?.currency ?? ctx.config.defaultCurrency ?? "USD";
 
     const format = norm.response_format ?? "concise";
     const offersForWire =
