@@ -11,6 +11,14 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      # vitest and its plugins pin each other's exact version, so a major bump
+      # opened separately for each one fails `npm ci` with ERESOLVE
+      vitest:
+        patterns:
+          - "vitest"
+          - "@vitest/*"
+        update-types:
+          - "major"
     ignore:
       # Pin @types/node to the minimum supported Node major (engines >=22):
       # newer types let Node-26-only APIs typecheck while crashing on Node 22
