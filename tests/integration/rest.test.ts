@@ -48,6 +48,7 @@ describe("RestClient (live)", () => {
       radius: 15000,
     });
     expect(predictions.length).toBeGreaterThan(0);
+    expect(predictions.every((p) => typeof p.place_id === "string" && p.place_id.length > 0)).toBe(true);
     const hasGardens = predictions.some((p) => /gardens/i.test(p.description));
     expect(hasGardens).toBe(true);
   });

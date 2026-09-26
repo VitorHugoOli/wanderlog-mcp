@@ -155,7 +155,11 @@ export class RestClient {
       "GET",
       `/api/placesAPI/autocomplete/v2?${qs}`,
     );
-    return env.data ?? [];
+    // The endpoint mixes in entries with no place_id. Callers take the first
+    // result, so one of those ahead of a real place became "Place not found".
+    return (env.data ?? []).filter(
+      (p) => typeof p?.place_id === "string" && p.place_id.length > 0,
+    );
   }
 
   /**
