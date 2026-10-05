@@ -93,3 +93,18 @@ describe("block ids", () => {
     expect(texts).toEqual(["Take the metro\n", "Take the tram\n"]);
   });
 });
+
+describe("get_trip polish (live test findings)", () => {
+  it("counts places from the itinerary, not the stale server counter", () => {
+    const trip = { ...tripWithNotes(), placeCount: 0 } as TripPlan;
+    const header = formatTrip(trip, "concise").split("\n")[0]!;
+    expect(header).toMatch(/· 2 places$/);
+  });
+
+  it("puts a multi-line item's id on its first line", () => {
+    const trip = tripWithNotes();
+    const lines = formatTrip(trip, "detailed", trip.itinerary.sections[DAY_INDEX]).split("\n");
+    const checklistLine = lines.find((l) => l.includes("Packing list"))!;
+    expect(checklistLine).toMatch(/\[id \d+\]$/);
+  });
+});

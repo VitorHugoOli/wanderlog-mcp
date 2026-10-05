@@ -104,10 +104,16 @@ function renderBlockLines(section: Section, format: ResponseFormat, indent: stri
   }
   // Detailed output appends each block's id so a later call can target one
   // exact block (note_id). Concise output keeps ids out of the model's way.
-  const idSuffix = (b: Block) => (format === "detailed" && b.id != null ? ` [id ${b.id}]` : "");
+  const withId = (b: Block, line: string) => {
+    if (format !== "detailed" || b.id == null) return line;
+    // On the item's first line, so multi-line items (checklists) stay readable.
+    const cut = line.indexOf("\n");
+    return cut < 0
+      ? `${line} [id ${b.id}]`
+      : `${line.slice(0, cut)} [id ${b.id}]${line.slice(cut)}`;
+  };
   return blocks.map(
-    (b, i) =>
-      `${indent}${i + 1}. ${formatBlockLine(b, format) ?? emptyBlockLabel(b)}${idSuffix(b)}`,
+    (b, i) => `${indent}${i + 1}. ${withId(b, formatBlockLine(b, format) ?? emptyBlockLabel(b))}`,
   );
 }
 
@@ -160,7 +166,13 @@ function formatTripHeader(trip: TripPlan, format: ResponseFormat): string {
   const dates = trip.startDate ? `${trip.startDate} → ${trip.endDate ?? "?"}` : "no dates";
   const parts = [trip.title, dates];
   if (typeof trip.days === "number") parts.push(`${trip.days} days`);
-  if (typeof trip.placeCount === "number") parts.push(`${trip.placeCount} places`);
+  // trip.placeCount is server metadata that edits made through the API do not
+  // refresh, so count the places actually in the itinerary.
+  const placeCount = trip.itinerary.sections.reduce(
+    (n, section) => n + (section.blocks ?? []).filter((b) => b.type === "place").length,
+    0,
+  );
+  parts.push(`${placeCount} places`);
   const base = parts.join(" · ");
   if (format === "concise") return base;
 

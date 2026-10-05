@@ -82,3 +82,13 @@ describe("undo", () => {
     expect(result.content[0]!.text).toContain("Nothing to undo");
   });
 });
+
+describe("undo summary", () => {
+  beforeEach(() => clearUndo("T"));
+  it("describes an added place as one added item", async () => {
+    const { ctx } = makeFakeContext();
+    await addNote(ctx, { trip_key: "T", text: "x", day: DAY });
+    const result = await undo(ctx, { trip_key: "T" });
+    expect(result.content[0]!.text).toContain("(added an item)");
+  });
+});
