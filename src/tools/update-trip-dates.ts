@@ -34,6 +34,9 @@ override, or move the content to other days first.
 
 Does not affect the Hotels, Flights, Transit, or Places-to-visit sections — only the
 per-day sections are added/removed.
+
+Repair: if a date has more than one day section (left by an interrupted edit), they are merged
+into one, keeping every item. Calling with the trip's current dates performs only this repair.
 `.trim();
 
 type Args = {
@@ -102,6 +105,70 @@ export function findDayInsertIndex(sections: readonly Section[], newDate: string
     }
   }
   return sections.length;
+}
+
+export type DuplicateRepair = { date: string; removedSections: number; movedBlocks: number };
+
+/**
+ * Ops that collapse duplicate day sections (two dayPlan sections with the same
+ * date, left behind by an interrupted or corrupted edit — upstream issue #58).
+ * Nothing is lost: the duplicates' blocks are appended to the surviving
+ * section (the one with the most blocks) before the duplicates are deleted, so
+ * no confirmation is needed. A heading only a duplicate has is carried over.
+ */
+export function buildDuplicateDayRepairOps(trip: TripPlan): {
+  ops: Json0Op[];
+  repairs: DuplicateRepair[];
+} {
+  const byDate = new Map<string, number[]>();
+  trip.itinerary.sections.forEach((section, index) => {
+    if (section.mode === "dayPlan" && section.date) {
+      byDate.set(section.date, [...(byDate.get(section.date) ?? []), index]);
+    }
+  });
+
+  const appendOps: Json0Op[] = [];
+  const headingOps: Json0Op[] = [];
+  const removals: Array<{ index: number; section: Section }> = [];
+  const repairs: DuplicateRepair[] = [];
+  for (const [date, indices] of byDate) {
+    if (indices.length < 2) continue;
+    const sections = trip.itinerary.sections;
+    const survivorIndex = indices.reduce((best, i) =>
+      sections[i]!.blocks.length > sections[best]!.blocks.length ? i : best,
+    );
+    const survivor = sections[survivorIndex]!;
+    let appendAt = survivor.blocks.length;
+    let moved = 0;
+    let headingCarried = Boolean(survivor.heading?.trim());
+    for (const i of indices) {
+      if (i === survivorIndex) continue;
+      const duplicate = sections[i]!;
+      for (const block of duplicate.blocks) {
+        appendOps.push({
+          p: ["itinerary", "sections", survivorIndex, "blocks", appendAt++],
+          li: structuredClone(block),
+        });
+        moved++;
+      }
+      if (!headingCarried && duplicate.heading?.trim()) {
+        headingCarried = true;
+        headingOps.push({
+          p: ["itinerary", "sections", survivorIndex, "heading"],
+          od: survivor.heading,
+          oi: duplicate.heading,
+        });
+      }
+      removals.push({ index: i, section: duplicate });
+    }
+    repairs.push({ date, removedSections: indices.length - 1, movedBlocks: moved });
+  }
+  // Appends and heading edits first (indices still valid), then deletions from
+  // the highest index down so each ld leaves the next one's index intact.
+  const deleteOps: Json0Op[] = removals
+    .sort((a, b) => b.index - a.index)
+    .map(({ index, section }) => ({ p: ["itinerary", "sections", index], ld: section }));
+  return { ops: [...appendOps, ...headingOps, ...deleteOps], repairs };
 }
 
 export type DayDiff = {
@@ -247,8 +314,25 @@ export async function updateTripDates(
     }
     validateDateRange(args.start_date, args.end_date);
     const result = await submitOp(ctx, args.trip_key, async (entry, submit) => {
+      const repair = buildDuplicateDayRepairOps(entry.snapshot);
+      if (repair.ops.length > 0) {
+        await submit(repair.ops);
+        const dates = entry.snapshot.itinerary.sections
+          .filter((section) => section.mode === "dayPlan" && section.date)
+          .map((section) => section.date);
+        if (new Set(dates).size !== dates.length) {
+          throw new WanderlogError("Duplicate day sections are still present", "stale_target");
+        }
+      }
       const trip = entry.snapshot;
       const ops = buildUpdateDatesOps(trip, args.start_date, args.end_date, args.force ?? false);
+      if (ops.length === 0 && repair.repairs.length > 0) {
+        return {
+          diff: { toAdd: [], toRemove: [] },
+          repairs: repair.repairs,
+          tripTitle: trip.title,
+        };
+      }
       if (ops.length === 0) {
         return {
           response: {
@@ -267,14 +351,22 @@ export async function updateTripDates(
       if (entry.snapshot.itinerary.sections.some((section) => removedSectionIds.has(section.id))) {
         throw new WanderlogError("A removed day section is still present", "stale_target");
       }
-      return { diff, tripTitle: trip.title };
+      return { diff, repairs: repair.repairs, tripTitle: trip.title };
     });
     if ("response" in result && result.response) return result.response;
+    const datesChanged = result.diff.toAdd.length > 0 || result.diff.toRemove.length > 0;
     const summary: string[] = [
-      `Updated "${result.tripTitle}" to ${args.start_date} → ${args.end_date}.`,
+      datesChanged || result.repairs.length === 0
+        ? `Updated "${result.tripTitle}" to ${args.start_date} → ${args.end_date}.`
+        : `Repaired duplicate days in "${result.tripTitle}" (dates unchanged).`,
     ];
     if (result.diff.toAdd.length > 0) {
       summary.push(`  Added ${result.diff.toAdd.length} day(s): ${result.diff.toAdd.join(", ")}`);
+    }
+    for (const r of result.repairs) {
+      summary.push(
+        `  Repaired ${r.date}: merged ${r.removedSections} duplicate day section(s) into one, keeping all ${r.movedBlocks} of their item(s).`,
+      );
     }
     if (result.diff.toRemove.length > 0) {
       summary.push(

@@ -35,5 +35,5 @@ describe.skipIf(!HAS_COOKIE)("wanderlog_search_hotels (integration)", () => {
 
     expect(parsed.available_filters).toBeDefined();
     expect(typeof parsed.total_results).toBe("number");
-  }, 30_000);
+  }, 120_000);
 });
