@@ -14,7 +14,13 @@ import { extractDeltaText } from "./remove-note.js";
 const slot = (time: string | null | undefined): string | undefined => time?.trim() || undefined;
 
 const normalizeName = (name: string): string =>
-  name.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/\s+/g, " ").trim();
+  name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 
 /**
  * Google's place_id is the identity that survives transliteration and chain

@@ -8,6 +8,7 @@ import { addPlace } from "../../src/tools/add-place.ts";
 import { resolveInsertionPoint } from "../../src/tools/insert-position.ts";
 import type { TripPlan } from "../../src/types.ts";
 import { checklistTrip } from "../fixtures/checklist-trip.ts";
+import { mixedBlocksTrip } from "../fixtures/mixed-blocks-trip.ts";
 
 // checklistTrip, day 2026-06-01 (section index 2): 1. Park Güell, 2. note, 3. checklist.
 const DAY = "2026-06-01";
@@ -166,5 +167,57 @@ describe("get_trip numbering", () => {
       "2. 📝 (empty note)",
       expect.stringMatching(/^3\. 📝 Don't forget/),
     ]);
+  });
+});
+
+describe("Phase 2 review coverage", () => {
+  it("numbers Places to visit and custom lists but keeps hotels/flights bulleted", () => {
+    const out = formatTrip(mixedBlocksTrip, "concise");
+    expect(out).toMatch(/✈ Flights\n {2}• ✈ NH 890/);
+    expect(out).toMatch(/🏨 Hotels and lodging\n {2}• Far East Village/);
+    const barcelona = formatTrip(checklistTrip, "concise");
+    expect(barcelona).toMatch(/📌 Places to visit\n {2}1\. La Sagrada Familia/);
+  });
+
+  it("shows a whitespace-only note as an empty placeholder", () => {
+    const trip = structuredClone(checklistTrip);
+    trip.itinerary.sections[DAY_INDEX]!.blocks.push({
+      id: 2,
+      type: "note",
+      text: { ops: [{ insert: "   \n \n" }] },
+    } as never);
+    const lines = formatTrip(trip, "concise", trip.itinerary.sections[DAY_INDEX]).split("\n");
+    expect(lines.at(-1)).toBe("4. 📝 (empty note)");
+  });
+
+  it("add_place honours before/after", async () => {
+    const before = makeFakeContext();
+    await addPlace(before.ctx, { trip_key: "T", place: "Louvre", day: DAY, before: "Park Güell" });
+    expect(before.dayLines()[0]).toBe("1. Musée du Louvre");
+
+    const after = makeFakeContext();
+    await addPlace(after.ctx, { trip_key: "T", place: "Louvre", day: DAY, after: "Park Güell" });
+    expect(after.dayLines()[1]).toBe("2. Musée du Louvre");
+  });
+
+  it("add_place with an anchor and no target places it in Places to visit", async () => {
+    const { ctx, submittedOps } = makeFakeContext();
+    const result = await addPlace(ctx, { trip_key: "T", place: "Louvre", position: 1 });
+    expect(result.isError).toBeUndefined();
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 1, "blocks", 0]);
+  });
+
+  it("resolves ordinal references inside the target section only", () => {
+    const trip = structuredClone(checklistTrip);
+    const day = trip.itinerary.sections[DAY_INDEX]!;
+    day.blocks.push(structuredClone(day.blocks[0]!), structuredClone(day.blocks[0]!));
+    expect(resolveInsertionPoint(trip, DAY_INDEX, { after: "2nd Park Güell" }).index).toBe(4);
+  });
+
+  it("refuses an anchor in a section Wanderlog keeps in date order", () => {
+    const hotels = mixedBlocksTrip.itinerary.sections.findIndex((s) => s.type === "hotels");
+    expect(() => resolveInsertionPoint(mixedBlocksTrip, hotels, { position: 1 })).toThrow(
+      /date order/,
+    );
   });
 });

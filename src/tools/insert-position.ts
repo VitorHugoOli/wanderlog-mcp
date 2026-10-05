@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { WanderlogValidationError } from "../errors.js";
 import type { TripPlan } from "../types.js";
+import { UNORDERED_SECTION_TYPES } from "../formatters/trip-summary.js";
 import { blockName, formatSection, resolveUniqueBlockInSection } from "./block-refs.js";
 
 /**
@@ -26,14 +27,14 @@ export const insertAnchorSchema = {
     .min(1)
     .optional()
     .describe(
-      "Optional: insert immediately before this place or reservation in the same day/list (natural reference, e.g. 'Louvre', '2nd café').",
+      "Optional: insert immediately before this place in the same day/list (natural reference, e.g. 'Louvre', '2nd café').",
     ),
   after: z
     .string()
     .min(1)
     .optional()
     .describe(
-      "Optional: insert immediately after this place or reservation in the same day/list (natural reference).",
+      "Optional: insert immediately after this place in the same day/list (natural reference).",
     ),
 };
 
@@ -63,6 +64,11 @@ export function resolveInsertionPoint(
   validateInsertAnchor(anchor);
   const section = trip.itinerary.sections[sectionIndex]!;
   const count = section.blocks.length;
+  if (hasInsertAnchor(anchor) && UNORDERED_SECTION_TYPES.has(section.type)) {
+    throw new WanderlogValidationError(
+      `${formatSection(section)} is kept in date order by Wanderlog, so position/before/after do not apply there.`,
+    );
+  }
 
   if (anchor.position !== undefined) {
     if (anchor.position > count + 1) {

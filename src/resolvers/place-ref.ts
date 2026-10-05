@@ -92,7 +92,7 @@ export function parseOrdinal(ref: string): ParsedOrdinal | null {
  *   3. Exact (case-insensitive) match against `block.place.name`.
  *   4. Substring (case-insensitive) match against `block.place.name`.
  *
- * Diacritics are not normalized: "Senso-ji" will not match "Sensō-ji".
+ * Latin diacritics are ignored: "Senso-ji" will not match "Sensō-ji".
  * Whitespace is collapsed and trimmed before matching.
  */
 export function resolvePlaceRef(trip: TripPlan, ref: string): PlaceRefResult {
@@ -255,11 +255,14 @@ function finalize(candidates: PlaceRefMatch[]): PlaceRefResult {
 function normalize(s: string): string {
   // Collapse runs of whitespace and punctuation dashes (hyphens, en/em-dashes)
   // so "Roppongi Hills - Tokyo City View" matches "Roppongi Hills Tokyo City View",
-  // and drop diacritics so "park guell" finds "Park Güell" and "sao jorge" finds
-  // "São Jorge" — users rarely type the accents.
+  // and drop Latin-script accents so "park guell" finds "Park Güell" and
+  // "sao jorge" finds "São Jorge" — users rarely type them. Only the combining
+  // diacritics block is stripped: other marks (Indic/Thai vowel signs, Japanese
+  // dakuten) change the word, and NFC recomposes Hangul/kana afterwards.
   return s
     .normalize("NFKD")
-    .replace(/\p{M}/gu, "")
+    .replace(/[\u0300-\u036f]/g, "")
+    .normalize("NFC")
     .replace(/[\s\-–—]+/g, " ")
     .trim()
     .toLowerCase();

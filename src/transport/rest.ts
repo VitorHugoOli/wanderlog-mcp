@@ -29,7 +29,9 @@ export const REQUEST_TIMEOUT_MS = 20_000;
 /**
  * Wanderlog answers bursts (an agent adding a whole itinerary) with 429. A
  * rate-limited request was not processed, so retrying it is safe for any
- * method. Retry-After is honoured up to the cap.
+ * method. Retry-After is honoured (delay-seconds form only) up to the cap.
+ * Worst case a call spends ~10s+3×20s here; inside a mutation that only
+ * happens on a cache miss (tripCache.getEntry), so the trip lock stays bounded.
  */
 export const RATE_LIMIT_RETRY_DELAYS_MS = [1_000, 3_000, 6_000];
 const RETRY_AFTER_CAP_MS = 10_000;
