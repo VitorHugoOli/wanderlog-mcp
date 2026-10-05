@@ -171,12 +171,27 @@ export function clearUndo(tripKey: string): void {
 function summarizeOps(ops: Json0Op[]): string {
   const counts = new Map<string, number>();
   const bump = (k: string) => counts.set(k, (counts.get(k) ?? 0) + 1);
+  // Field sets on something inserted in the same change are part of "added".
+  const inserted = ops
+    .filter((op) => op.li !== undefined && op.ld === undefined)
+    .map((op) => op.p.join("/"));
+  const insideInserted = (op: Json0Op) =>
+    inserted.some((path) => op.p.join("/").startsWith(`${path}/`));
   for (const op of ops) {
+    if (op.li === undefined && op.ld === undefined && op.lm === undefined && insideInserted(op)) {
+      continue;
+    }
     const field = op.p[op.p.length - 1];
     if (op.lm !== undefined) bump("moved an item");
     else if (op.li !== undefined && op.ld !== undefined) bump("replaced an item");
     else if (op.li !== undefined)
-      bump(op.p.includes("expenses") ? "added an expense" : "added an item");
+      bump(
+        op.p.includes("expenses")
+          ? "added an expense"
+          : op.p.length === 3 && op.p[1] === "sections"
+            ? "added a section"
+            : "added an item",
+      );
     else if (op.ld !== undefined)
       bump(op.p.includes("expenses") ? "removed an expense" : "removed an item");
     else if (op.t === "rich-text") bump("edited text");
