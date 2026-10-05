@@ -131,58 +131,58 @@ describe("ShareDBClient connection lifecycle", () => {
     current.receive(SUBSCRIBE_ACK);
     await subscribed;
 
-    const timerBefore = (client as any).reconnectTimer;
     expect(() => {
       staleSocket.emit("open");
       staleSocket.emit("message", Buffer.from(JSON.stringify(INIT)));
       staleSocket.emit("close", 1006);
     }).not.toThrow();
     expect(client.isSubscribed).toBe(true);
-    expect((client as any).reconnectTimer).toBe(timerBefore);
-
-    // The reconnect scheduled by the timed-out attempt finds the live socket.
-    await vi.advanceTimersByTimeAsync(1_000);
     expect(FakeWebSocket.instances).toHaveLength(2);
-    expect(client.isSubscribed).toBe(true);
     client.close();
   });
 
-  it("shares one socket between the reconnect timer and an in-flight connect()", async () => {
+  it("does not reconnect in the background after an unexpected close", async () => {
     const client = await subscribedClient();
+    const closed = vi.fn();
+    client.on("closed", closed);
+
     latestSocket().terminate();
-    expect((client as any).reconnectTimer).toBeDefined();
-
-    const toolConnect = client.connect();
-    expect(FakeWebSocket.instances).toHaveLength(2);
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    expect(FakeWebSocket.instances).toHaveLength(2);
-
-    completeHandshake(latestSocket());
-    await toolConnect;
-    await flush();
-    latestSocket().receive(SUBSCRIBE_ACK);
-    await flush();
-    expect(client.isSubscribed).toBe(true);
-    client.close();
-  });
-
-  it("does not leak a rejection when resubscribing after a reconnect fails", async () => {
-    const client = await subscribedClient();
-    latestSocket().terminate();
-
-    await vi.advanceTimersByTimeAsync(1_000);
-    const reconnected = latestSocket();
-    completeHandshake(reconnected);
-    await flush();
-    expect(reconnected.sentActions()).toEqual(["hs", "s"]);
-
-    reconnected.receive({ error: { message: "boom" } });
-    await flush();
-
+    expect(closed).toHaveBeenCalledWith(1006);
     expect(client.isSubscribed).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    client.close();
+  });
+
+  it("reconnects and resubscribes on demand after an unexpected close", async () => {
+    const client = await subscribedClient();
+    latestSocket().terminate();
+
+    const resubscribed = client.subscribe();
+    const fresh = latestSocket();
     expect(FakeWebSocket.instances).toHaveLength(2);
-    expect((client as any).reconnectTimer).toBeUndefined();
+    completeHandshake(fresh);
+    await flush();
+    expect(fresh.sentActions()).toEqual(["hs", "s"]);
+    fresh.receive(SUBSCRIBE_ACK);
+    await expect(resubscribed).resolves.toEqual({ title: "t" });
+    expect(client.isSubscribed).toBe(true);
+    client.close();
+  });
+
+  it("rejects the caller when resubscribing fails, without crashing", async () => {
+    const client = await subscribedClient();
+    latestSocket().terminate();
+
+    const resubscribed = client.subscribe();
+    const failed = expect(resubscribed).rejects.toMatchObject({ code: "ws_error" });
+    completeHandshake(latestSocket());
+    await flush();
+    latestSocket().receive({ error: { message: "boom" } });
+    await failed;
+    expect(client.isSubscribed).toBe(false);
     client.close();
   });
 

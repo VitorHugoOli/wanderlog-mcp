@@ -45,7 +45,6 @@ type Frame = InitFrame | HandshakeAckFrame | SubscribeAckFrame | OpFrame;
 export interface ShareDBClient {
   /** Fired when a remote op (not one we submitted) is received. */
   on(event: "remoteOp", listener: (ops: Json0Op[], version: number) => void): this;
-  on(event: "reconnected", listener: () => void): this;
   on(event: "closed", listener: (code: number) => void): this;
   off(event: string, listener: (...args: any[]) => void): this;
 }
@@ -60,8 +59,6 @@ export class ShareDBClient extends EventEmitter {
   private ws?: WebSocket;
   private sessionId?: string;
   private handshakeComplete = false;
-  private closedByUser = false;
-  private reconnectAttempts = 0;
   private seqCounter = 0;
   private snapshot?: TripPlan;
   private _version = 0;
@@ -76,7 +73,6 @@ export class ShareDBClient extends EventEmitter {
   >();
   private connectPromise?: Promise<void>;
   private subscribePromise?: Promise<TripPlan>;
-  private reconnectTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly config: Config,
@@ -166,14 +162,13 @@ export class ShareDBClient extends EventEmitter {
       ws.on("close", (code: number) => {
         clearTimeout(handshakeTimeout);
         if (isStale()) return;
-        const wasSubscribed = this.subscribed;
         this.handshakeComplete = false;
         this.subscribed = false;
         this.failAllPending(new WanderlogError("WebSocket closed", "ws_closed"));
+        // No background reconnect: TripCache drops its entry on "closed" and the
+        // next tool call reconnects and resubscribes on demand, so a dead socket
+        // never keeps timers alive or races a fresh one.
         this.emit("closed", code);
-        if (!this.closedByUser && code !== 1000) {
-          this.scheduleReconnect(wasSubscribed);
-        }
       });
 
       ws.on("unexpected-response", (_req, res) => {
@@ -258,7 +253,6 @@ export class ShareDBClient extends EventEmitter {
     if (frame.a === "hs" && !this.handshakeComplete) {
       this.handshakeComplete = true;
       clearTimeout(handshakeTimeout);
-      this.reconnectAttempts = 0;
       const hs = frame as HandshakeAckFrame;
       if (!this.sessionId && hs.id) this.sessionId = hs.id;
       connectResolve();
@@ -310,47 +304,6 @@ export class ShareDBClient extends EventEmitter {
     }
   }
 
-  private scheduleReconnect(resubscribe: boolean): void {
-    if (this.reconnectTimer) return;
-
-    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30_000);
-    this.reconnectAttempts += 1;
-
-    if (this.reconnectAttempts > 5) {
-      console.warn(
-        `[wanderdog] Reconnection has failed ${this.reconnectAttempts} times consecutively. Delaying next attempt by ${delay / 1000}s.`,
-      );
-    }
-
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = undefined;
-      if (this.closedByUser) return;
-      // Go through connect() so a tool call that is already reconnecting and
-      // this timer share one socket instead of racing two of them.
-      this.connect()
-        .then(async () => {
-          this.reconnectAttempts = 0;
-          if (resubscribe) await this.subscribe();
-          this.emit("reconnected");
-        })
-        .catch((err) => {
-          if (this.handshakeComplete && !(err instanceof WanderlogAuthError)) {
-            // Connected, but resubscribe failed. The next tripCache read
-            // resubscribes on demand; don't tear down a healthy socket.
-            return;
-          }
-          if (err instanceof WanderlogAuthError) {
-            console.error(
-              `[wanderdog] Permanent reconnection failure: Auth expired. Stopping reconnection.`,
-            );
-            this.failAllPending(err);
-            return;
-          }
-          this.scheduleReconnect(resubscribe);
-        });
-    }, delay);
-  }
-
   private send(obj: unknown): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new WanderlogError("WebSocket is not open — cannot send frame", "ws_not_open");
@@ -359,8 +312,7 @@ export class ShareDBClient extends EventEmitter {
   }
 
   async subscribe(): Promise<TripPlan> {
-    // Concurrent callers (tripCache and the reconnect timer) must share one
-    // request: subscribePending holds a single resolver, so a second "s" frame
+    // Concurrent callers must share one request: subscribePending holds a single resolver, so a second "s" frame
     // would orphan the first caller until its timeout.
     if (this.subscribePromise) return this.subscribePromise;
     this.subscribePromise = this.doSubscribe();
@@ -377,14 +329,31 @@ export class ShareDBClient extends EventEmitter {
     if (this.subscribed && this.snapshot) return this.snapshot;
 
     const ack = await new Promise<SubscribeAckFrame>((resolve, reject) => {
-      this.subscribePending = { resolve, reject };
-      this.send({ a: "s", c: "TripPlans", d: this.tripKey });
-      setTimeout(() => {
-        if (this.subscribePending) {
+      // A timer left running after the ack could later clear a newer
+      // subscribePending and strand that caller.
+      const timer = setTimeout(() => {
+        if (this.subscribePending === pending) {
           this.subscribePending = undefined;
           reject(new WanderlogError("Subscribe timeout", "subscribe_timeout"));
         }
       }, 10_000);
+      const pending = {
+        resolve: (frame: SubscribeAckFrame) => {
+          clearTimeout(timer);
+          resolve(frame);
+        },
+        reject: (err: Error) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      };
+      this.subscribePending = pending;
+      try {
+        this.send({ a: "s", c: "TripPlans", d: this.tripKey });
+      } catch (err) {
+        this.subscribePending = undefined;
+        pending.reject(err as Error);
+      }
     });
 
     if (!ack.data) {
@@ -445,12 +414,7 @@ export class ShareDBClient extends EventEmitter {
   }
 
   close(): void {
-    this.closedByUser = true;
     this.subscribed = false;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = undefined;
-    }
     this.failAllPending(new WanderlogError("Client closed", "ws_closed"));
     this.ws?.close();
   }
