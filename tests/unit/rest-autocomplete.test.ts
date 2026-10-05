@@ -66,3 +66,51 @@ describe("RestClient.searchPlacesAutocomplete", () => {
     expect(await search(undefined)).toEqual([]);
   });
 });
+
+describe("RestClient rate limiting", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    vi.useRealTimers();
+    globalThis.fetch = realFetch;
+  });
+
+  it("retries a 429 and succeeds once Wanderlog lets it through", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("{}", { status: 429, headers: { "Retry-After": "2" } }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, user: { id: 5, username: "u" } }), {
+          status: 200,
+        }),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const rest = new RestClient({
+      cookieHeader: "c",
+      baseUrl: "https://x",
+      userAgent: "t",
+    } as never);
+
+    const user = rest.getUser();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await expect(user).resolves.toMatchObject({ id: 5 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up with a clear rate_limited error after the retries", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockImplementation(async () => new Response("{}", { status: 429 }));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const rest = new RestClient({
+      cookieHeader: "c",
+      baseUrl: "https://x",
+      userAgent: "t",
+    } as never);
+
+    const user = rest.getUser();
+    const failed = expect(user).rejects.toMatchObject({ code: "rate_limited" });
+    await vi.advanceTimersByTimeAsync(20_000);
+    await failed;
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+});

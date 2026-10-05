@@ -26,6 +26,14 @@ type Envelope<T> = { success?: boolean } & T;
  */
 export const REQUEST_TIMEOUT_MS = 20_000;
 
+/**
+ * Wanderlog answers bursts (an agent adding a whole itinerary) with 429. A
+ * rate-limited request was not processed, so retrying it is safe for any
+ * method. Retry-After is honoured up to the cap.
+ */
+export const RATE_LIMIT_RETRY_DELAYS_MS = [1_000, 3_000, 6_000];
+const RETRY_AFTER_CAP_MS = 10_000;
+
 export class RestClient {
   constructor(private readonly config: Config) {}
 
@@ -45,6 +53,25 @@ export class RestClient {
     method: string,
     path: string,
     opts: { body?: unknown; timeoutMs?: number } = {},
+  ): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await this.requestOnce<T>(method, path, opts);
+      } catch (err) {
+        const retryAfter = (err as { retryAfterMs?: number }).retryAfterMs;
+        if (retryAfter === undefined || attempt >= RATE_LIMIT_RETRY_DELAYS_MS.length) throw err;
+        const backoff = RATE_LIMIT_RETRY_DELAYS_MS[attempt]!;
+        await new Promise((r) =>
+          setTimeout(r, Math.min(Math.max(retryAfter, backoff), RETRY_AFTER_CAP_MS)),
+        );
+      }
+    }
+  }
+
+  private async requestOnce<T>(
+    method: string,
+    path: string,
+    opts: { body?: unknown; timeoutMs?: number },
   ): Promise<T> {
     const url = `${this.config.baseUrl}${path}`;
     const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
@@ -72,6 +99,20 @@ export class RestClient {
 
     if (response.status === 401 || response.status === 403) {
       throw new WanderlogAuthError();
+    }
+    if (response.status === 429) {
+      const header = Number(response.headers.get("retry-after"));
+      const err = new WanderlogError(
+        `Wanderlog is rate-limiting requests (429 on ${method} ${path.split("?")[0]})`,
+        "rate_limited",
+        {
+          hint: "Too many requests in a short time. Nothing was changed by this call.",
+          followUps: ["Wait a few seconds, then retry the same call."],
+        },
+      );
+      (err as WanderlogError & { retryAfterMs?: number }).retryAfterMs =
+        Number.isFinite(header) && header > 0 ? header * 1000 : 0;
+      throw err;
     }
     if (response.status === 404) {
       throw new WanderlogNotFoundError("Resource", path);
