@@ -16,6 +16,7 @@ import {
 import { addHotel, addHotelDescription, addHotelInputSchema } from "./tools/add-hotel.js";
 import { addNote, addNoteDescription, addNoteInputSchema } from "./tools/add-note.js";
 import { addPlace, addPlaceDescription, addPlaceInputSchema } from "./tools/add-place.js";
+import { undo, undoDescription, undoInputSchema } from "./tools/undo.js";
 import { attachFile, attachFileDescription, attachFileInputSchema } from "./tools/attach-file.js";
 import {
   listAttachments,
@@ -991,6 +992,16 @@ export function buildServer(ctx: AppContext): McpServer {
     requireAuth(ctx, async (args) =>
       listAttachments(ctx, args as Parameters<typeof listAttachments>[1]),
     ),
+  );
+
+  server.registerTool(
+    "wanderlog_undo",
+    {
+      title: "Undo this session's last change to a trip",
+      description: undoDescription,
+      inputSchema: undoInputSchema,
+    },
+    requireAuth(ctx, async (args) => undo(ctx, args as Parameters<typeof undo>[1])),
   );
 
   return server;
