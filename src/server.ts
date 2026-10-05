@@ -16,6 +16,12 @@ import {
 import { addHotel, addHotelDescription, addHotelInputSchema } from "./tools/add-hotel.js";
 import { addNote, addNoteDescription, addNoteInputSchema } from "./tools/add-note.js";
 import { addPlace, addPlaceDescription, addPlaceInputSchema } from "./tools/add-place.js";
+import { attachFile, attachFileDescription, attachFileInputSchema } from "./tools/attach-file.js";
+import {
+  listAttachments,
+  listAttachmentsDescription,
+  listAttachmentsInputSchema,
+} from "./tools/list-attachments.js";
 import { addPlaces, addPlacesDescription, addPlacesInputSchema } from "./tools/add-places.js";
 import { copyPlace, copyPlaceDescription, copyPlaceInputSchema } from "./tools/copy-place.js";
 import {
@@ -956,6 +962,34 @@ export function buildServer(ctx: AppContext): McpServer {
     },
     requireAuth(ctx, async (args) =>
       removeDuplicatePlaces(ctx, args as Parameters<typeof removeDuplicatePlaces>[1]),
+    ),
+  );
+
+  server.registerTool(
+    "wanderlog_attach_file",
+    {
+      title: "Attach a document or photo to a place",
+      description: attachFileDescription,
+      inputSchema: attachFileInputSchema,
+    },
+    requireAuth(ctx, async (args) => attachFile(ctx, args as Parameters<typeof attachFile>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_list_attachments",
+    {
+      title: "List files attached in a trip",
+      description: listAttachmentsDescription,
+      inputSchema: listAttachmentsInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      listAttachments(ctx, args as Parameters<typeof listAttachments>[1]),
     ),
   );
 
