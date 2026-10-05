@@ -220,3 +220,30 @@ describe("resolvePlaceRef role keywords for transit/rental", () => {
     }
   });
 });
+
+describe("resolvePlaceRef accent handling", () => {
+  function tripWith(names: string[]): TripPlan {
+    const trip = structuredClone(mixedBlocksTrip);
+    const day = trip.itinerary.sections.find((s) => s.mode === "dayPlan")!;
+    day.blocks = names.map((name, i) => ({
+      id: 9000 + i,
+      type: "place",
+      place: { name, place_id: `p${i}` },
+    })) as never;
+    return trip;
+  }
+
+  it("ignores Latin accents", () => {
+    const trip = tripWith(["Park Güell", "Sensō-ji", "Castelo de São Jorge"]);
+    expect(resolvePlaceRef(trip, "park guell").kind).toBe("unique");
+    expect(resolvePlaceRef(trip, "senso ji").kind).toBe("unique");
+    expect(resolvePlaceRef(trip, "sao jorge").kind).toBe("unique");
+  });
+
+  it("keeps marks that change the word in other scripts", () => {
+    const trip = tripWith(["दिल्ली हाट", "ガスト"]);
+    expect(resolvePlaceRef(trip, "दल").kind).toBe("none");
+    expect(resolvePlaceRef(trip, "カスト").kind).toBe("none");
+    expect(resolvePlaceRef(trip, "ガスト").kind).toBe("unique");
+  });
+});

@@ -86,7 +86,7 @@ function renderDaySection(section: Section, format: ResponseFormat): string {
 }
 
 /** Reservation lists are kept in date order by Wanderlog; their order carries no meaning. */
-const UNORDERED_SECTION_TYPES = new Set(["hotels", "flights", "transit", "rentalCars"]);
+export const UNORDERED_SECTION_TYPES = new Set(["hotels", "flights", "transit", "rentalCars"]);
 
 /**
  * Days and lists are numbered by raw block position, the same numbers the

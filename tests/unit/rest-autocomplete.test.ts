@@ -114,3 +114,34 @@ describe("RestClient rate limiting", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });
+
+describe("RestClient Retry-After cap", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    vi.useRealTimers();
+    globalThis.fetch = realFetch;
+  });
+
+  it("never waits longer than the cap even if Retry-After asks for more", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response("{}", { status: 429, headers: { "Retry-After": "3600" } }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ success: true, user: { id: 5, username: "u" } }), {
+          status: 200,
+        }),
+      );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    const rest = new RestClient({
+      cookieHeader: "c",
+      baseUrl: "https://x",
+      userAgent: "t",
+    } as never);
+    const user = rest.getUser();
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(user).resolves.toMatchObject({ id: 5 });
+  });
+});
