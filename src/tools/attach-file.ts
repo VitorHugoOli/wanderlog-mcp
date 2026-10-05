@@ -244,10 +244,14 @@ export async function attachFile(
         "attachments",
       ];
       const newAttachments = [...oldAttachments, newAttachment];
+      // li at the end, not a whole-array oi: two sessions attaching at once
+      // then both land instead of one transform dropping the other.
       await submit([
-        "attachments" in blockRaw
-          ? { p: attachPath, od: blockRaw.attachments, oi: newAttachments }
-          : { p: attachPath, oi: newAttachments },
+        Array.isArray(blockRaw.attachments)
+          ? { p: [...attachPath, oldAttachments.length], li: newAttachment }
+          : "attachments" in blockRaw
+            ? { p: attachPath, od: blockRaw.attachments, oi: newAttachments }
+            : { p: attachPath, oi: newAttachments },
       ]);
       return "attached";
     });

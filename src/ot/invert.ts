@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import type { QuillDelta, TripPlan } from "../types.js";
-import { applyOp, type Json0Op } from "./apply.js";
+import { applySingleOp, type Json0Op, type JsonContainer } from "./apply.js";
 import { deltaLength, deltaToRuns, type DeltaOp } from "./rich-text.js";
 
 /**
@@ -13,16 +13,18 @@ import { deltaLength, deltaToRuns, type DeltaOp } from "./rich-text.js";
 export function invertOps(before: TripPlan, ops: Json0Op[]): Json0Op[] | null {
   // Never let undo bookkeeping break a write: any surprise just means no undo.
   try {
-    let doc = before;
+    // One working copy, components applied in place: cloning the whole trip
+    // per component stalled the event loop on large batches.
+    const work = structuredClone(before) as unknown as JsonContainer;
     const inverse: Json0Op[] = [];
     for (const op of ops) {
-      const inv = invertComponent(doc, op);
+      const inv = invertComponent(work, op);
       if (!inv) return null;
       inverse.unshift(...inv);
-      doc = applyOp(doc, [op]);
     }
+    for (const op of inverse) applySingleOp(work, op);
     // Applying the inverse must restore the original exactly.
-    return isDeepStrictEqual(applyOp(doc, inverse), before) ? inverse : null;
+    return isDeepStrictEqual(work, before) ? inverse : null;
   } catch {
     return null;
   }
@@ -37,16 +39,24 @@ function valueAt(doc: unknown, path: (string | number)[]): unknown {
   return cur;
 }
 
-function invertComponent(doc: TripPlan, op: Json0Op): Json0Op[] | null {
+/** Computes a component's inverse, then applies the component to `doc` in place. */
+function invertComponent(doc: JsonContainer, op: Json0Op): Json0Op[] | null {
+  const inv = inverseOf(doc, op);
+  if (inv) applySingleOp(doc, op);
+  return inv;
+}
+
+function inverseOf(doc: JsonContainer, op: Json0Op): Json0Op[] | null {
   const { p } = op;
   if (op.t !== undefined) {
     if (op.t !== "rich-text") return null;
     // Restore the field's previous delta wholesale: delete what the op leaves,
     // insert what was there (formatting and embeds included).
-    const previous = valueAt(doc, p) as QuillDelta | undefined;
+    const previous = structuredClone(valueAt(doc, p)) as QuillDelta | undefined;
     if (!previous) return null;
-    const after = applyOp(doc, [op]);
-    const length = deltaLength(valueAt(after, p) as QuillDelta);
+    const probe = { field: structuredClone(previous) } as JsonContainer;
+    applySingleOp(probe, { ...op, p: ["field"] });
+    const length = deltaLength((probe as { field: QuillDelta }).field);
     const restore: DeltaOp[] = deltaToRuns(previous).map((run) => {
       const insert = run.embed ?? run.text;
       return run.attributes ? { insert, attributes: run.attributes } : { insert };

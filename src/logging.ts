@@ -29,9 +29,12 @@ let fileLoggingBroken = false;
 function appendToFile(record: Record<string, unknown>): void {
   if (fileLoggingBroken || process.env.WANDERLOG_LOG_FILE === "0") return;
   try {
-    mkdirSync(LOG_DIR, { recursive: true });
+    // Owner-only: on Linux $TMPDIR is shared, and records carry trip keys.
+    mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
     const day = new Date().toISOString().slice(0, 10);
-    appendFileSync(join(LOG_DIR, `wanderlog-mcp-${day}.log`), `${JSON.stringify(record)}\n`);
+    appendFileSync(join(LOG_DIR, `wanderlog-mcp-${day}.log`), `${JSON.stringify(record)}\n`, {
+      mode: 0o600,
+    });
   } catch {
     // Logging must never take the server down; stop trying after one failure.
     fileLoggingBroken = true;
@@ -41,7 +44,12 @@ function appendToFile(record: Record<string, unknown>): void {
 function log(level: LogLevel, scope: string, message: string, meta?: Record<string, unknown>) {
   if (LEVEL_ORDER[level] < LEVEL_ORDER[configuredLevel()]) return;
   const safeMessage = redactSecrets(message);
-  const safeMeta = meta ? (JSON.parse(redactSecrets(JSON.stringify(meta))) as object) : undefined;
+  let safeMeta: object | undefined;
+  try {
+    safeMeta = meta ? (JSON.parse(redactSecrets(JSON.stringify(meta))) as object) : undefined;
+  } catch {
+    safeMeta = { meta: "unserializable" };
+  }
   const suffix = safeMeta && Object.keys(safeMeta).length > 0 ? ` ${JSON.stringify(safeMeta)}` : "";
   process.stderr.write(`[wanderdog:${scope}] ${safeMessage}${suffix}\n`);
   appendToFile({

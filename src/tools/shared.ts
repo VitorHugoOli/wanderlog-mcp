@@ -70,6 +70,7 @@ export async function submitOp<T>(
     const inverses: Json0Op[][] = [];
     const accepted: Json0Op[][] = [];
     let undoable = options.recordUndo !== false;
+    let versionAfter = entry.version;
     const submit = async (ops: Json0Op[]): Promise<void> => {
       // Read per batch: a refresh after a transformed op swaps the entry's client.
       const client = entry.client ?? ctx.pool.get(tripKey);
@@ -100,6 +101,9 @@ export async function submitOp<T>(
       if (!resync) {
         try {
           ctx.tripCache.applyLocalOp(tripKey, ops, client.version);
+          // Captured now, not when the tool returns: anything awaited after
+          // the last submit could let someone else's op in.
+          versionAfter = client.version;
         } catch {
           resync = true;
         }
@@ -133,7 +137,7 @@ export async function submitOp<T>(
       if (undoable && inverses.length > 0) {
         recordUndo(tripKey, {
           batches: inverses,
-          versionAfter: entry.version,
+          versionAfter,
           summary: summarizeOps(accepted.flat()),
         });
       } else if (!undoable && options.recordUndo !== false) {

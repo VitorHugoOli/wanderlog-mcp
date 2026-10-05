@@ -20,7 +20,7 @@ export type Json0Op = {
   o?: unknown;
 };
 
-type JsonContainer = Record<string, unknown> | unknown[];
+export type JsonContainer = Record<string, unknown> | unknown[];
 
 function pathInvalid(path: (string | number)[], reason: string): never {
   const rendered = path.map((p) => JSON.stringify(p)).join(", ");
@@ -88,7 +88,8 @@ function applyRichTextOp(parent: JsonContainer, key: string | number, payload: u
   }
 }
 
-function applySingleOp(doc: JsonContainer, op: Json0Op): void {
+/** Applies one component in place (no clone). */
+export function applySingleOp(doc: JsonContainer, op: Json0Op): void {
   const { p } = op;
 
   if (p.length === 0) {

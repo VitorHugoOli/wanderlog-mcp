@@ -83,3 +83,17 @@ describe("journal photos", () => {
     ]);
   });
 });
+
+describe("optional upload root", () => {
+  it("restricts uploads to WANDERLOG_UPLOAD_DIR when set", async () => {
+    const allowed = mkdtempSync(join(tmpdir(), "wl-allowed-"));
+    writeFileSync(join(allowed, "ok.pdf"), "%PDF");
+    process.env.WANDERLOG_UPLOAD_DIR = allowed;
+    try {
+      await expect(readUploadableFile(join(allowed, "ok.pdf"))).resolves.toBeInstanceOf(Buffer);
+      await expect(readUploadableFile(join(dir, "ticket.pdf"))).rejects.toThrow(/limited to/);
+    } finally {
+      delete process.env.WANDERLOG_UPLOAD_DIR;
+    }
+  });
+});
