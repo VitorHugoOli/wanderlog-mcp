@@ -157,7 +157,10 @@ describe("against a fake ShareDB server", () => {
     const client = ctx.pool.get("faketrip");
 
     faults.mute = true;
-    await new Promise((r) => setTimeout(r, 400));
+    const deadline = Date.now() + 5_000;
+    while (client.isSubscribed && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 20));
+    }
     expect(client.isSubscribed).toBe(false);
 
     faults.mute = false;

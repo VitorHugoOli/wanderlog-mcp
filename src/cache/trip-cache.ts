@@ -48,6 +48,7 @@ export class TripCache {
   private async ensureEntry(tripKey: string): Promise<CacheEntry> {
     const existing = this.entries.get(tripKey);
     if (existing) {
+      const judgedClient = existing.client;
       if ((await this.isAlive(existing)) && this.isFresh(existing)) {
         existing.lastUsedAt = Date.now();
         return existing;
@@ -55,7 +56,11 @@ export class TripCache {
       // Serving a snapshot that no longer matches the live document is how an
       // agent comes to believe its own write did not land, and repeats it.
       // The liveness check awaited, so only drop the entry we judged.
-      if (this.entries.get(tripKey) === existing) this.deleteEntry(tripKey);
+      // A refresh may have re-filled the same entry object with a new client
+      // meanwhile, so compare the client we judged, not just the object.
+      if (this.entries.get(tripKey) === existing && existing.client === judgedClient) {
+        this.deleteEntry(tripKey);
+      }
     }
     return this.subscribeOnce(tripKey);
   }
