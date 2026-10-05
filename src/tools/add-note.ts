@@ -4,7 +4,15 @@ import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
 import type { TripPlan } from "../types.js";
 import { ALLOW_DUPLICATE_HINT, findDuplicateNote } from "./duplicate-guard.js";
-import { deltaOffsetText, findNoteParagraphs } from "./remove-note.js";
+import {
+  composeDelta,
+  deltaLength,
+  deltaToPlainText,
+  fillNewBlockTextOps,
+  insertOpsPlainText,
+  noteTextToDelta,
+  replaceDeltaOps,
+} from "../ot/rich-text.js";
 import { hasInsertAnchor, insertAnchorSchema, resolveInsertionPoint } from "./insert-position.js";
 import {
   buildNoteBlock,
@@ -19,7 +27,16 @@ export const addNoteInputSchema = z.object({
     .string()
     .min(1)
     .describe("The trip to add the note to. Use wanderlog_list_trips if you don't know the key."),
-  text: z.string().min(1).describe("The note text. Plain text — can be multi-line."),
+  text: z
+    .string()
+    .min(1)
+    .describe("The note text — can be multi-line. Markdown is rendered as rich text (see format)."),
+  format: z
+    .enum(["markdown", "plain"])
+    .optional()
+    .describe(
+      'How to read the note text: "markdown" (default) renders **bold**, *italic*, `code`, [links](https://…), "- " bullets, "1. " lists and "# " headings as Wanderlog rich text; "plain" stores it verbatim.',
+    ),
   day: z
     .string()
     .min(1)
@@ -81,7 +98,8 @@ export async function addNote(
       if (target.section.type === "textOnly") {
         return appendToNotesArea(trip, target, args, submit);
       }
-      if (!args.allow_duplicate && findDuplicateNote(target.section, args.text)) {
+      const content = noteTextToDelta(args.text, args.format ?? "markdown");
+      if (!args.allow_duplicate && findDuplicateNote(target.section, insertOpsPlainText(content))) {
         return { added: false, targetLabel: target.label, placement: "", tripTitle: trip.title };
       }
       const point = resolveInsertionPoint(trip, target.index, args);
@@ -89,7 +107,7 @@ export async function addNote(
       const blockPath = ["itinerary", "sections", target.index, "blocks", point.index];
       const ops: Json0Op[] = [
         { p: blockPath, li: buildNoteBlock(userId) },
-        { p: [...blockPath, "text"], t: "rich-text", o: [{ insert: `${args.text}\n` }] },
+        { p: [...blockPath, "text"], t: "rich-text", o: fillNewBlockTextOps(content) },
       ];
       await submit(ops);
       return {
@@ -130,26 +148,23 @@ async function appendToNotesArea(
       `${label} is free text, so position/before/after do not apply — the note is added as a new paragraph at the end.`,
     );
   }
-  const text = args.text.trim();
-  if (
-    !args.allow_duplicate &&
-    findNoteParagraphs(target.section.text, text).some((p) => p.text.trim() === text)
-  ) {
+  const content = noteTextToDelta(args.text, args.format ?? "markdown");
+  const newPlain = insertOpsPlainText(content).trim();
+  const existingPlain = deltaToPlainText(target.section.text);
+  if (!args.allow_duplicate && `\n${existingPlain}`.includes(`\n${newPlain}\n`)) {
     return { added: false, targetLabel: label, placement: "", tripTitle: trip.title };
   }
-  const existing = deltaOffsetText(target.section.text);
   const textPath = ["itinerary", "sections", target.index, "text"];
+  const existingLength = deltaLength(target.section.text);
   let ops: Json0Op[];
   if (!target.section.text) {
-    ops = [{ p: textPath, oi: { ops: [{ insert: `${text}\n` }] } }];
+    ops = [{ p: textPath, oi: composeDelta(undefined, content) }];
+  } else if (!existingPlain.trim() && existingLength === existingPlain.length) {
+    // Blank area (just its terminator): replace rather than leave a blank first line.
+    ops = [{ p: textPath, t: "rich-text", o: replaceDeltaOps(target.section.text, content) }];
   } else {
-    // Insert before the document's final newline; start a new paragraph unless
-    // the area is empty.
-    const end = Math.max(0, existing.length - 1);
-    const insert = existing.trim() ? `\n${text}` : text;
-    ops = [
-      { p: textPath, t: "rich-text", o: end > 0 ? [{ retain: end }, { insert }] : [{ insert }] },
-    ];
+    // Each converted line brings its own terminator, so append after the last one.
+    ops = [{ p: textPath, t: "rich-text", o: [{ retain: existingLength }, ...content] }];
   }
   await submit(ops);
   return { added: true, targetLabel: label, placement: "", tripTitle: trip.title };

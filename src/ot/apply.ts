@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { WanderlogError } from "../errors.js";
-import type { TripPlan } from "../types.js";
+import type { QuillDelta, TripPlan } from "../types.js";
+import { composeDelta, type DeltaOp } from "./rich-text.js";
 
 export type Json0Op = {
   p: (string | number)[];
@@ -65,59 +66,21 @@ function navigateParent(doc: JsonContainer, path: (string | number)[]): JsonCont
 }
 
 /**
- * Apply a Quill Delta "rich-text" subtype op to a QuillDelta field.
- *
- * Quill Delta compose semantics: walk through the incoming ops in order.
- * `retain(n)` skips n characters, `insert(s)` inserts text, `delete(n)`
- * removes n characters. We rebuild the delta's plain-text string, then
- * write back a new `{ops: [{insert: result}]}`.
- *
- * This is intentionally simplified — we flatten the existing delta to
- * plain text, apply the transform, and produce a single-insert delta.
- * Formatting attributes on the original text are lost, which is acceptable
- * because our tools only create plain-text notes. Remote rich-text edits
- * from the UI that carry attributes will lose formatting in our cache, but
- * the server holds the authoritative version.
+ * Quill Delta compose semantics: `retain(n)` skips n characters (applying
+ * `attributes` when present), `insert` inserts text or an embed, `delete(n)`
+ * removes n characters. Formatting and embeds (images, mentions) are kept, so
+ * the cached delta matches what Wanderlog stores and later offsets stay exact.
  */
 function applyRichTextOp(parent: JsonContainer, key: string | number, payload: unknown): void {
+  if (!Array.isArray(payload)) return;
   const target = Array.isArray(parent)
     ? parent[key as number]
     : (parent as Record<string, unknown>)[key as string];
-
-  // Extract current plain text from the QuillDelta
-  let current = "";
-  if (target && typeof target === "object" && "ops" in (target as Record<string, unknown>)) {
-    const ops = (target as { ops: Array<{ insert?: string }> }).ops;
-    if (Array.isArray(ops)) {
-      // Flattening drops embeds (images, mentions), which Quill counts as one
-      // character each, so every later offset into this text would be wrong.
-      // Refuse instead; callers resync the cache from the server.
-      if (ops.some((op) => typeof op.insert !== "string")) {
-        throw new WanderlogError(
-          "Cannot apply a rich-text edit locally to text that contains embeds",
-          "ot_rich_text_embed",
-        );
-      }
-      current = ops.map((op) => op.insert as string).join("");
-    }
-  }
-
-  // Apply the delta ops to the current text
-  if (!Array.isArray(payload)) return;
-  let pos = 0;
-  let result = current;
-  for (const dop of payload as Array<Record<string, unknown>>) {
-    if (typeof dop.retain === "number") {
-      pos += dop.retain;
-    } else if (typeof dop.insert === "string") {
-      result = result.slice(0, pos) + dop.insert + result.slice(pos);
-      pos += dop.insert.length;
-    } else if (typeof dop.delete === "number") {
-      result = result.slice(0, pos) + result.slice(pos + dop.delete);
-    }
-  }
-
-  const newDelta = { ops: [{ insert: result }] };
+  const current =
+    target && typeof target === "object" && "ops" in (target as Record<string, unknown>)
+      ? (target as QuillDelta)
+      : undefined;
+  const newDelta = composeDelta(current, payload as DeltaOp[]);
   if (Array.isArray(parent)) {
     parent[key as number] = newDelta;
   } else {
