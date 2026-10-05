@@ -4,6 +4,7 @@ import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
 import { resolveDay } from "../resolvers/day.js";
+import { fillNewBlockTextOps, noteTextToDelta } from "../ot/rich-text.js";
 import type { PlaceData } from "../types.js";
 import { ALLOW_DUPLICATE_HINT, findDuplicatePlace } from "./duplicate-guard.js";
 import {
@@ -59,7 +60,13 @@ export const addPlaceInputSchema = {
     .string()
     .optional()
     .describe(
-      "Optional inline note attached directly to this place. Use for practical context: transit directions, what to order, booking tips, time guidance. Appears on the place itself in Wanderlog (not as a separate note block).",
+      "Optional inline note attached directly to this place. Use for practical context: transit directions, what to order, booking tips, time guidance. Appears on the place itself in Wanderlog (not as a separate note block). Markdown is rendered as rich text (see format).",
+    ),
+  format: z
+    .enum(["markdown", "plain"])
+    .optional()
+    .describe(
+      'How to read the note text: "markdown" (default) renders **bold**, *italic*, `code`, [links](https://…), "- " bullets, "1. " lists and "# " headings as Wanderlog rich text; "plain" stores it verbatim.',
     ),
   start_time: z
     .string()
@@ -120,6 +127,7 @@ type Args = {
   day?: string;
   section?: string;
   note?: string;
+  format?: "markdown" | "plain";
   start_time?: string;
   end_time?: string;
   allow_duplicate?: boolean;
@@ -241,7 +249,7 @@ export async function addPlace(
           ops.push({
             p: [...blockPath, "text"],
             t: "rich-text",
-            o: [{ insert: `${args.note}\n` }],
+            o: fillNewBlockTextOps(noteTextToDelta(args.note, args.format ?? "markdown")),
           });
         }
         if (args.start_time) ops.push({ p: [...blockPath, "startTime"], oi: args.start_time });

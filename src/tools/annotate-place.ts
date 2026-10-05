@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { insertOpsPlainText, noteTextToDelta, replaceDeltaOps } from "../ot/rich-text.js";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
@@ -7,7 +8,6 @@ import { isPlaceBlock, type QuillDelta } from "../types.js";
 import { extractDeltaText } from "./remove-note.js";
 import {
   assertBlockAtPath,
-  buildNoteReplaceDelta,
   findBlockById,
   normalizeNote,
   submitOp,
@@ -27,6 +27,12 @@ export const annotatePlaceInputSchema = {
     .optional()
     .describe(
       "Set or replace the inline note on this place. Practical context: transit, tips, timing, what to see.",
+    ),
+  format: z
+    .enum(["markdown", "plain"])
+    .optional()
+    .describe(
+      'How to read the note text: "markdown" (default) renders **bold**, *italic*, `code`, [links](https://…), "- " bullets, "1. " lists and "# " headings as Wanderlog rich text; "plain" stores it verbatim.',
     ),
   start_time: z
     .string()
@@ -55,6 +61,7 @@ type Args = {
   trip_key: string;
   place: string;
   note?: string;
+  format?: "markdown" | "plain";
   start_time?: string;
   end_time?: string;
 };
@@ -128,7 +135,10 @@ export async function annotatePlace(
               "text",
             ],
             t: "rich-text",
-            o: buildNoteReplaceDelta((target as { text?: QuillDelta }).text, args.note),
+            o: replaceDeltaOps(
+              (target as { text?: QuillDelta }).text,
+              noteTextToDelta(args.note, args.format ?? "markdown"),
+            ),
           },
         ];
         await submit(textOps);
@@ -173,7 +183,11 @@ export async function annotatePlace(
       // Equality, not `includes`: an appended note still contains the new text.
       const noteText = normalizeNote(extractDeltaText(record.text as QuillDelta | undefined));
       if (
-        (args.note && noteText !== normalizeNote(args.note)) ||
+        (args.note &&
+          noteText !==
+            normalizeNote(
+              insertOpsPlainText(noteTextToDelta(args.note, args.format ?? "markdown")),
+            )) ||
         (args.start_time && record.startTime !== args.start_time) ||
         (args.end_time && record.endTime !== args.end_time)
       ) {

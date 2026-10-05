@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { AppContext } from "../context.js";
+import type { DeltaAttributes } from "../ot/rich-text.js";
 import { WanderlogError, WanderlogNotFoundError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
 import { resolveDay } from "../resolvers/day.js";
@@ -49,6 +50,8 @@ type RichTextTarget = {
   offset: number;
   matchedLen: number;
   crossesBoundary: boolean;
+  /** Formatting of the run the match sits in, carried onto the replacement. */
+  attributes?: DeltaAttributes;
 };
 
 type PlainTarget = {
@@ -73,7 +76,12 @@ function previewText(text: string): string {
 function matchInDelta(
   delta: QuillDelta | undefined,
   query: string,
-): { offset: number; matchedLen: number; crossesBoundary: boolean } | null {
+): {
+  offset: number;
+  matchedLen: number;
+  crossesBoundary: boolean;
+  attributes?: DeltaAttributes;
+} | null {
   const ops = delta?.ops ?? [];
   const lowerQuery = query.toLowerCase();
   const boundaries: number[] = [];
@@ -88,7 +96,14 @@ function matchInDelta(
   if (matchStart === -1) return null;
   const matchEnd = matchStart + lowerQuery.length;
   const crossesBoundary = boundaries.some((b) => b > matchStart && b < matchEnd);
-  return { offset: matchStart, matchedLen: lowerQuery.length, crossesBoundary };
+  // The run holding the match is the last one starting at or before it; the
+  // replacement inherits its formatting (from samihsq@d36a809).
+  let runIndex = 0;
+  for (let i = 0; i < boundaries.length; i++) {
+    if (boundaries[i]! <= matchStart) runIndex = i;
+  }
+  const attributes = ops[runIndex]?.attributes as DeltaAttributes | undefined;
+  return { offset: matchStart, matchedLen: lowerQuery.length, crossesBoundary, attributes };
 }
 
 export function findEditTargets(trip: TripPlan, query: string, day?: string): EditTarget[] {
@@ -121,6 +136,7 @@ export function findEditTargets(trip: TripPlan, query: string, day?: string): Ed
           offset: m.offset,
           matchedLen: m.matchedLen,
           crossesBoundary: m.crossesBoundary,
+          attributes: m.attributes,
         });
       }
     }
@@ -142,6 +158,7 @@ export function findEditTargets(trip: TripPlan, query: string, day?: string): Ed
             offset: m.offset,
             matchedLen: m.matchedLen,
             crossesBoundary: m.crossesBoundary,
+            attributes: m.attributes,
           });
         }
       } else if (isPlaceBlock(block)) {
@@ -159,6 +176,7 @@ export function findEditTargets(trip: TripPlan, query: string, day?: string): Ed
               offset: m.offset,
               matchedLen: m.matchedLen,
               crossesBoundary: m.crossesBoundary,
+              attributes: m.attributes,
             });
           }
         }
@@ -195,6 +213,7 @@ export function findEditTargets(trip: TripPlan, query: string, day?: string): Ed
               offset: m.offset,
               matchedLen: m.matchedLen,
               crossesBoundary: m.crossesBoundary,
+              attributes: m.attributes,
             });
           }
         }
@@ -253,7 +272,13 @@ export async function editNote(
         const deltaOps: Array<Record<string, unknown>> = [];
         if (target.offset > 0) deltaOps.push({ retain: target.offset });
         deltaOps.push({ delete: target.matchedLen });
-        if (args.new_text) deltaOps.push({ insert: args.new_text });
+        if (args.new_text) {
+          deltaOps.push(
+            target.attributes
+              ? { insert: args.new_text, attributes: target.attributes }
+              : { insert: args.new_text },
+          );
+        }
         ops = [{ p: target.fieldPath, t: "rich-text", o: deltaOps }];
       } else {
         const newValue =
