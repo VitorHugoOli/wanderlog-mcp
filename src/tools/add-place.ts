@@ -7,6 +7,13 @@ import { resolveDay } from "../resolvers/day.js";
 import type { PlaceData } from "../types.js";
 import { ALLOW_DUPLICATE_HINT, findDuplicatePlace } from "./duplicate-guard.js";
 import {
+  hasInsertAnchor,
+  insertAnchorSchema,
+  resolveInsertionPoint,
+  validateInsertAnchor,
+  type InsertAnchor,
+} from "./insert-position.js";
+import {
   buildPlaceBlock,
   findDaySectionByDate,
   findPlacesToVisitSection,
@@ -66,6 +73,7 @@ export const addPlaceInputSchema = {
     .regex(/^\d{2}:\d{2}$/, "must be HH:mm")
     .optional()
     .describe("Optional end time in HH:mm format (e.g. '11:30'). Only used with start_time."),
+  ...insertAnchorSchema,
   allow_duplicate: z
     .boolean()
     .optional()
@@ -97,6 +105,11 @@ it is already there — so retrying after an unclear error never duplicates it. 
 time is a real second visit and is added; pass allow_duplicate: true for an intended repeat with
 the same time.
 
+Placement: by default the place is appended at the end of the day/list. To put it somewhere
+specific, pass ONE of "position" (the number wanderlog_get_trip shows; to go between items 3
+and 4 use 4), "before" or "after" (another place in the same day/list). Placement needs a single
+target, so it cannot be combined with giving both "day" and "section".
+
 Returns a confirmation including the resolved place name and where it was added.
 `.trim();
 
@@ -110,7 +123,7 @@ type Args = {
   start_time?: string;
   end_time?: string;
   allow_duplicate?: boolean;
-};
+} & InsertAnchor;
 
 export async function addPlace(
   ctx: AppContext,
@@ -118,6 +131,12 @@ export async function addPlace(
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   try {
     validateTimeInputs(args.start_time, args.end_time);
+    validateInsertAnchor(args);
+    if (hasInsertAnchor(args) && args.day && args.section) {
+      throw new WanderlogValidationError(
+        "position/before/after needs a single target: give either day or section, not both.",
+      );
+    }
     if (!args.place && !args.place_id) {
       throw new WanderlogValidationError("At least one of place or place_id must be provided");
     }
@@ -194,6 +213,7 @@ export async function addPlace(
       }
 
       const added: string[] = [];
+      let placement = "";
       const alreadyThere: string[] = [];
       for (const target of targets) {
         const sectionIndex = lockedEntry.snapshot.itinerary.sections.findIndex(
@@ -212,7 +232,9 @@ export async function addPlace(
         // applies an op array as a single version, so the place can never land
         // without its note or times (which would invite a duplicating retry).
         const block = buildPlaceBlock(detail, userId);
-        const blockPath = ["itinerary", "sections", sectionIndex, "blocks", section.blocks.length];
+        const point = resolveInsertionPoint(lockedEntry.snapshot, sectionIndex, args);
+        if (hasInsertAnchor(args)) placement = ` ${point.description}`;
+        const blockPath = ["itinerary", "sections", sectionIndex, "blocks", point.index];
         const ops: Json0Op[] = [{ p: blockPath, li: block }];
         if (imageKeys.length > 0) ops.push({ p: [...blockPath, "imageKeys"], oi: imageKeys });
         if (args.note) {
@@ -227,7 +249,7 @@ export async function addPlace(
         await submit(ops);
         added.push(target.label);
       }
-      return { added, alreadyThere, tripTitle: trip.title };
+      return { added, alreadyThere, placement, tripTitle: trip.title };
     });
 
     if (mutation.added.length === 0) {
@@ -238,7 +260,7 @@ export async function addPlace(
     }
 
     const parts = [
-      `Added ${detail.name} to ${mutation.added.join(" and ")} in "${mutation.tripTitle}".`,
+      `Added ${detail.name} to ${mutation.added.join(" and ")}${mutation.placement} in "${mutation.tripTitle}".`,
     ];
     if (mutation.alreadyThere.length > 0) {
       parts.push(`Already in ${mutation.alreadyThere.join(" and ")} — not added there again.`);

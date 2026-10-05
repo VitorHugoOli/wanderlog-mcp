@@ -31,6 +31,10 @@ Use concise format for summarizing or answering questions about a trip in natura
 Use detailed format when the user asks for specific info like addresses, phone numbers,
 hotel check-in/out dates, the numeric trip id, or the trip's forwarding email address.
 
+Items in each day and list are numbered (notes and checklists included). Those numbers are the
+"position" values accepted by wanderlog_add_place, wanderlog_add_note, wanderlog_add_checklist
+and wanderlog_move_block — e.g. to put something between items 3 and 4, use position 4.
+
 If you don't know the trip_key, call wanderlog_list_trips first to find it.
 `.trim();
 

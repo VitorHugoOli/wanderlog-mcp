@@ -251,6 +251,11 @@ Example add_place call with all features:
 
 Places without notes and times are just pins on a map. Rich places make an itinerary useful.
 
+PLACEMENT: add_place, add_note and add_checklist append to the end of the day/list unless given
+ONE of position / before / after. wanderlog_get_trip numbers every item in a day or list (notes
+and checklists count); to insert between items 3 and 4 pass position: 4, or after: "<item 3's
+place name>". To reorder existing items use wanderlog_move_block — never remove and re-add.
+
 If a write fails with a connection error (WebSocket closed, submit timeout), it may still have
 been saved: check with wanderlog_get_trip before redoing it. add_place and add_note skip an
 identical repeat (same place and start time / same note text in the same day), so retrying them

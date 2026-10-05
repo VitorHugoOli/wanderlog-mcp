@@ -65,9 +65,7 @@ function renderSection(section: Section, format: ResponseFormat): string | null 
   }
 
   const sectionText = section.text ? quillToPlain(section.text).trim() : "";
-  const blockLines = (section.blocks ?? [])
-    .map((b) => formatBlockLine(b, format))
-    .filter(Boolean) as string[];
+  const blockLines = renderBlockLines(section, format, "  ");
 
   if (!sectionText && blockLines.length === 0) return null;
 
@@ -75,9 +73,7 @@ function renderSection(section: Section, format: ResponseFormat): string | null 
   const heading = section.heading?.trim() || sectionDefaultHeading(section);
   const parts = [`${icon} ${heading}`];
   if (sectionText) parts.push(sectionText);
-  if (blockLines.length > 0) {
-    parts.push(blockLines.map((l) => `  • ${l}`).join("\n"));
-  }
+  if (blockLines.length > 0) parts.push(blockLines.join("\n"));
   return parts.join("\n");
 }
 
@@ -86,8 +82,42 @@ function renderDaySection(section: Section, format: ResponseFormat): string {
   if (section.blocks.length === 0) {
     return `📅 ${label}\n  (no plans)`;
   }
-  const lines = section.blocks.map((b) => formatBlockLine(b, format)).filter(Boolean) as string[];
-  return `📅 ${label}\n${lines.map((l) => `  • ${l}`).join("\n")}`;
+  return `📅 ${label}\n${renderBlockLines(section, format, "  ").join("\n")}`;
+}
+
+/** Reservation lists are kept in date order by Wanderlog; their order carries no meaning. */
+const UNORDERED_SECTION_TYPES = new Set(["hotels", "flights", "transit", "rentalCars"]);
+
+/**
+ * Days and lists are numbered by raw block position, the same numbers the
+ * position/before/after parameters of the add and move tools use. Blocks that
+ * render as nothing (empty notes, unnamed places) still get a placeholder line
+ * so the numbering never skips and "position 4" is always the 4th line.
+ */
+function renderBlockLines(section: Section, format: ResponseFormat, indent: string): string[] {
+  const blocks = section.blocks ?? [];
+  if (UNORDERED_SECTION_TYPES.has(section.type)) {
+    return blocks
+      .map((b) => formatBlockLine(b, format))
+      .filter((line): line is string => Boolean(line))
+      .map((line) => `${indent}• ${line}`);
+  }
+  return blocks.map(
+    (b, i) => `${indent}${i + 1}. ${formatBlockLine(b, format) ?? emptyBlockLabel(b)}`,
+  );
+}
+
+function emptyBlockLabel(block: Block): string {
+  switch (block.type) {
+    case "note":
+      return "📝 (empty note)";
+    case "checklist":
+      return "☑ (empty checklist)";
+    case "place":
+      return "(unnamed place)";
+    default:
+      return `${block.type ?? "block"} (empty)`;
+  }
 }
 
 function sectionIcon(section: Section): string {
@@ -148,8 +178,7 @@ function formatDay(trip: TripPlan, section: Section, format: ResponseFormat): st
   if (section.blocks.length === 0) {
     return `${header}\n(no plans for this day yet)`;
   }
-  const lines = section.blocks.map((b) => formatBlockLine(b, format)).filter(Boolean) as string[];
-  return `${header}\n${lines.map((l) => `• ${l}`).join("\n")}`;
+  return `${header}\n${renderBlockLines(section, format, "").join("\n")}`;
 }
 
 /**
@@ -219,7 +248,7 @@ function formatPlaceBlock(block: PlaceBlock, format: ResponseFormat): string | n
 
 function formatNoteBlock(block: NoteBlock, format: ResponseFormat): string | null {
   const text = quillToPlain(block.text);
-  if (!text) return null;
+  if (!text.trim()) return null;
   const oneLine = text.replace(/\s+/g, " ").trim();
   if (format === "concise") {
     const truncated = oneLine.length > 200 ? `${oneLine.slice(0, 197)}…` : oneLine;
