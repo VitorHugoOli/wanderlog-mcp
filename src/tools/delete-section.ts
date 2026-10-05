@@ -51,6 +51,12 @@ export async function deleteSection(
       }
       const found = resolved.match;
       const { index, section } = found;
+      if (section.type === "textOnly") {
+        throw new WanderlogValidationError(
+          `"${section.heading || "Notes"}" is the trip's free-text notes area and cannot be deleted.`,
+          "To clear it, remove its paragraphs with wanderlog_remove_note.",
+        );
+      }
       if (!isCustomSection(trip, index)) {
         const reason =
           section.mode === "dayPlan"

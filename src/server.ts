@@ -32,6 +32,11 @@ import {
 } from "./tools/remove-place.js";
 import { moveBlock, moveBlockDescription, moveBlockInputSchema } from "./tools/move-block.js";
 import {
+  reorderSections,
+  reorderSectionsDescription,
+  reorderSectionsInputSchema,
+} from "./tools/reorder-sections.js";
+import {
   searchPlaces,
   searchPlacesDescription,
   searchPlacesInputSchema,
@@ -485,7 +490,7 @@ export function buildServer(ctx: AppContext): McpServer {
   server.registerTool(
     "wanderlog_move_block",
     {
-      title: "Move a block within its itinerary section",
+      title: "Move a place or reservation within its section, or a place to another day/list",
       description: moveBlockDescription,
       inputSchema: moveBlockInputSchema,
     },
@@ -646,6 +651,24 @@ export function buildServer(ctx: AppContext): McpServer {
       inputSchema: addCarRentalInputSchema,
     },
     requireAuth(ctx, async (args) => addCarRental(ctx, args as Parameters<typeof addCarRental>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_reorder_sections",
+    {
+      title: "Reorder custom lists in a Wanderlog trip",
+      description: reorderSectionsDescription,
+      inputSchema: reorderSectionsInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      reorderSections(ctx, args as Parameters<typeof reorderSections>[1]),
+    ),
   );
 
   return server;
