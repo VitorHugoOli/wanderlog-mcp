@@ -43,7 +43,9 @@ export class TripCache {
   private async ensureEntry(tripKey: string): Promise<CacheEntry> {
     const existing = this.entries.get(tripKey);
     if (existing) {
-      if (existing.client.isSubscribed) return existing;
+      if (this.isFresh(existing)) return existing;
+      // Serving a snapshot that no longer matches the live document is how an
+      // agent comes to believe its own write did not land, and repeats it.
       this.deleteEntry(tripKey);
     }
 
@@ -59,12 +61,39 @@ export class TripCache {
     }
   }
 
-  private async subscribeAndCache(tripKey: string): Promise<CacheEntry> {
+  /**
+   * Every path that advances the client's version also advances the entry's,
+   * so a mismatch means an op was missed (or one of ours was transformed).
+   */
+  private isFresh(entry: CacheEntry): boolean {
+    return entry.client.isSubscribed && entry.version === entry.client.version;
+  }
+
+  /**
+   * Replace a diverged entry's snapshot with a freshly subscribed one, in the
+   * same entry object, so a multi-step mutation holding that entry keeps
+   * working against current data. Used when the server transformed one of our
+   * ops: applying the untransformed op locally would corrupt the cache.
+   */
+  async refresh(tripKey: string): Promise<void> {
+    const entry = this.entries.get(tripKey);
+    if (!entry) return;
+    entry.client.off("remoteOp", entry.remoteOpListener);
+    entry.client.off("closed", entry.closedListener);
+    this.entries.delete(tripKey);
+    this.pool.evict(tripKey, entry.client);
+
+    const fresh = await this.subscribeAndCache(tripKey, entry.geos);
+    Object.assign(entry, fresh);
+    this.entries.set(tripKey, entry);
+  }
+
+  private async subscribeAndCache(tripKey: string, knownGeos?: Geo[]): Promise<CacheEntry> {
     // REST pre-check: fails fast with 404 → WanderlogNotFoundError.
     // Without this, a bogus trip key hangs on the WS subscribe timeout.
     // The response also gives us the trip's associated geos, which the
     // WebSocket snapshot doesn't include — we store them for search biasing.
-    const { geos } = await this.rest.getTripWithResources(tripKey);
+    const geos = knownGeos ?? (await this.rest.getTripWithResources(tripKey)).geos;
 
     const client = this.pool.get(tripKey);
     try {
