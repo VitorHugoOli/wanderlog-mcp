@@ -251,6 +251,11 @@ Example add_place call with all features:
 
 Places without notes and times are just pins on a map. Rich places make an itinerary useful.
 
+If a write fails with a connection error (WebSocket closed, submit timeout), it may still have
+been saved: check with wanderlog_get_trip before redoing it. add_place and add_note skip an
+identical repeat (same place and start time / same note text in the same day), so retrying them
+is safe; pass allow_duplicate: true only when a repeat is intended.
+
 JOURNALING (a trip's travelogue of places the user actually visited):
   wanderlog_list_journal / add_journal / edit_journal / remove_journal manage the journal.
   A journal stop is a place + date/time + a text entry (the user's notes about visiting it).

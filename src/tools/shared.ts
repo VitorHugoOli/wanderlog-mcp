@@ -71,7 +71,7 @@ export async function submitOp<T>(
         if (!isConfirmedNonApplication(err)) {
           ctx.tripCache.invalidate(tripKey);
         }
-        throw err;
+        throw withAmbiguityHint(err);
       }
 
       if (result && result.ackVersion !== result.sentVersion) {
@@ -102,6 +102,20 @@ const CONFIRMED_NON_APPLICATION_CODES = new Set([
 
 function isConfirmedNonApplication(err: unknown): boolean {
   return err instanceof WanderlogError && CONFIRMED_NON_APPLICATION_CODES.has(err.code);
+}
+
+/** The connection failed after the op left: the server may or may not have applied it. */
+const AMBIGUOUS_CODES = new Set(["ws_closed", "submit_timeout"]);
+
+function withAmbiguityHint(err: unknown): unknown {
+  if (!(err instanceof WanderlogError) || !AMBIGUOUS_CODES.has(err.code) || err.hint) return err;
+  return new WanderlogError(err.message, err.code, {
+    hint: "The connection dropped after the change was sent, so it may already have been saved.",
+    followUps: [
+      "Call wanderlog_get_trip to check whether the change is there before retrying.",
+      "Retrying wanderlog_add_place or wanderlog_add_note is safe: an identical repeat is detected and skipped.",
+    ],
+  });
 }
 
 const RATE_LIMIT_RETRY_DELAYS_MS = [2_000, 4_000, 8_000];

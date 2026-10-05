@@ -145,6 +145,12 @@ describe("Mutation tools (live round-trip)", () => {
     const originalIds = originalBlocks.map((block) => block.id);
     expect(originalIds).toHaveLength(3);
     expect(originalBlocks.every(isPlaceBlock)).toBe(true);
+    // Insert, note and times travel in one submit; check the server kept all of them.
+    const praca = originalBlocks.find(
+      (block) => isPlaceBlock(block) && block.place.name.includes("Comércio"),
+    )!;
+    expect(praca).toMatchObject({ startTime: "11:00", endTime: "12:00" });
+    expect(JSON.stringify(praca.text)).toContain("Integration metadata for Praça do Comércio");
     const firstName = isPlaceBlock(originalBlocks[0]!) ? originalBlocks[0]!.place.name : "";
     const secondName = isPlaceBlock(originalBlocks[1]!) ? originalBlocks[1]!.place.name : "";
     const thirdName = isPlaceBlock(originalBlocks[2]!) ? originalBlocks[2]!.place.name : "";
