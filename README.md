@@ -16,6 +16,29 @@ The agent calls the tools, interleaves places and notes for each day, adds hotel
 
 **See a real example:** [14-day Japan Golden Route](https://wanderlog.com/view/dmvegdhqsa/japan-golden-route--tokyo--hakone--kyoto--nara--osaka) — built entirely by an AI agent using this MCP server.
 
+## This fork
+
+Personal fork ([VitorHugoOli/wanderlog-mcp](https://github.com/VitorHugoOli/wanderlog-mcp), branch `fork`) of [shaikhspeare/wanderlog-mcp](https://github.com/shaikhspeare/wanderlog-mcp). `main` mirrors upstream; every change lives on a topic branch merged into `fork`, so a branch can be dropped once upstream ships an equivalent.
+
+### Connection robustness
+
+- ShareDB handshake is sent only after the server's `init` (upstream PR #82), and stale sockets can no longer crash the process.
+- No background reconnect: a closed socket drops the cached trip and the next tool call resubscribes.
+- Ops are submitted at the version of the snapshot they were built from; when the server acks at a later version (it transformed our op against concurrent edits) the cache refetches instead of applying the untransformed op. Our own op echoes are never re-applied, unknown OT subtypes drop the cache instead of being skipped, and concurrent (re)subscriptions of a trip are shared.
+- 30s WebSocket heartbeat, teardown on a missing ack, a quick ping before serving a trip idle for 45s (e.g. after sleep), and idle trips closed after 30 min.
+- The process exits when its client closes stdin or disappears; REST calls time out (20s, 60s for hotel search); the MCP handshake no longer waits for the auth probe; a rejected cookie is cached for 30s only and network failures are never reported as a bad cookie; anything shaped like the session cookie is stripped from tool output and logs.
+- `add_place` / `add_note` write the block and all its fields in one submit, skip an identical repeat (`allow_duplicate` to override), and a write that failed after leaving tells the agent it may already be saved.
+
+### Protocol notes learned the hard way
+
+- Wanderlog drops an `hs` that arrives before its `init` frame.
+- An uncontended op is acked at exactly the version it was sent at; an op sent at an older version is transformed server-side (acked later). Both are pinned by `tests/integration/version-ack.test.ts`.
+- Wanderlog answers WebSocket ping frames.
+
+### Tests
+
+- `npm test` — unit; `npm run test:reliability` — builds and runs the server against a black-hole REST and an in-process fake ShareDB server (fault injection, no credentials); `npm run test:integration` — live, needs `.env` with `WANDERLOG_COOKIE` and `WANDERLOG_TRIP_KEY` pointing at a trip titled `WANDERDOG_TEST…` (read-only suites refuse any other trip; mutating suites create and delete their own `WANDERDOG_TEST_<ts>` trips).
+
 ## What's New (Unreleased)
 
 - Custom-list lifecycle operations now reject duplicate or ambiguous section headings instead of silently changing the first match.

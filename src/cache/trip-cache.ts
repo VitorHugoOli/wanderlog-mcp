@@ -54,18 +54,27 @@ export class TripCache {
       }
       // Serving a snapshot that no longer matches the live document is how an
       // agent comes to believe its own write did not land, and repeats it.
-      this.deleteEntry(tripKey);
+      // The liveness check awaited, so only drop the entry we judged.
+      if (this.entries.get(tripKey) === existing) this.deleteEntry(tripKey);
     }
+    return this.subscribeOnce(tripKey);
+  }
 
+  /**
+   * Every (re)subscription of a trip goes through here, so concurrent callers
+   * share one subscription. Two parallel subscriptions on one client would
+   * each register a remoteOp listener and apply every remote op twice.
+   */
+  private async subscribeOnce(tripKey: string, knownGeos?: Geo[]): Promise<CacheEntry> {
     const pending = this.subscribing.get(tripKey);
     if (pending) return pending;
 
-    const promise = this.subscribeAndCache(tripKey);
+    const promise = this.subscribeAndCache(tripKey, knownGeos);
     this.subscribing.set(tripKey, promise);
     try {
       return await promise;
     } finally {
-      this.subscribing.delete(tripKey);
+      if (this.subscribing.get(tripKey) === promise) this.subscribing.delete(tripKey);
     }
   }
 
@@ -88,17 +97,17 @@ export class TripCache {
    * working against current data. Used when the server transformed one of our
    * ops: applying the untransformed op locally would corrupt the cache.
    */
-  async refresh(tripKey: string): Promise<void> {
-    const entry = this.entries.get(tripKey);
-    if (!entry) return;
-    entry.client.off("remoteOp", entry.remoteOpListener);
-    entry.client.off("closed", entry.closedListener);
-    this.entries.delete(tripKey);
-    this.pool.evict(tripKey, entry.client);
+  async refresh(tripKey: string, entry?: CacheEntry): Promise<void> {
+    const held = entry ?? this.entries.get(tripKey);
+    if (!held) return;
+    if (this.entries.get(tripKey) === held) this.deleteEntry(tripKey);
 
-    const fresh = await this.subscribeAndCache(tripKey, entry.geos);
-    Object.assign(entry, fresh);
-    this.entries.set(tripKey, entry);
+    const fresh = await this.subscribeOnce(tripKey, held.geos);
+    if (fresh === held) return;
+    // The map's object is what the remoteOp listener updates, so the caller's
+    // object becomes the live entry and `fresh` is retired.
+    Object.assign(held, fresh);
+    if (this.entries.get(tripKey) === fresh) this.entries.set(tripKey, held);
   }
 
   private async subscribeAndCache(tripKey: string, knownGeos?: Geo[]): Promise<CacheEntry> {
@@ -108,6 +117,10 @@ export class TripCache {
     // WebSocket snapshot doesn't include — we store them for search biasing.
     const geos = knownGeos ?? (await this.rest.getTripWithResources(tripKey)).geos;
 
+    // A client that is already subscribed but owned by no entry would hand
+    // back its original snapshot paired with its current version (the client
+    // never applies ops to its own copy). Start from a fresh one instead.
+    if (this.pool.has(tripKey) && this.pool.get(tripKey).isSubscribed) this.pool.evict(tripKey);
     const client = this.pool.get(tripKey);
     try {
       const snapshot = await client.subscribe();
@@ -118,7 +131,10 @@ export class TripCache {
         try {
           current.snapshot = applyOp(current.snapshot, ops);
           current.version = version;
-        } catch {
+        } catch (err) {
+          process.stderr.write(
+            `[wanderdog] dropping cached trip after an op it cannot apply: ${(err as Error).message}\n`,
+          );
           this.deleteEntry(tripKey);
         }
       };

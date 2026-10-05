@@ -26,17 +26,20 @@ async function main() {
   const transport = new StdioServerTransport();
 
   let shuttingDown = false;
+  let exitCode = 0;
   const shutdown = (reason: string, code = 0) => {
+    // A fatal error during a clean shutdown must still exit non-zero.
+    exitCode = Math.max(exitCode, code);
     if (shuttingDown) return;
     shuttingDown = true;
     log(`${reason}, shutting down`);
-    setTimeout(() => process.exit(code), SHUTDOWN_GRACE_MS).unref();
+    setTimeout(() => process.exit(exitCode), SHUTDOWN_GRACE_MS).unref();
     ctx.tripCache.clear();
     ctx.pool.closeAll();
     server
       .close()
       .catch(() => {})
-      .finally(() => process.exit(code));
+      .finally(() => process.exit(exitCode));
   };
 
   process.on("SIGINT", () => shutdown("SIGINT received"));
@@ -44,6 +47,7 @@ async function main() {
   process.on("SIGHUP", () => shutdown("SIGHUP received"));
   // The stdio transport never listens for EOF, and open sockets keep the event
   // loop alive, so without this a server whose client exited lingers forever.
+  // (transport.onclose is owned by the SDK's Protocol, hence stdin events.)
   process.stdin.on("end", () => shutdown("client closed stdin"));
   process.stdin.on("close", () => shutdown("client closed stdin"));
   // Belt and braces for a client that dies without closing the pipe: once the

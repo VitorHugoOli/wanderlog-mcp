@@ -75,21 +75,21 @@ export async function submitOp<T>(
         throw withAmbiguityHint(err);
       }
 
-      if (result && result.ackVersion !== result.sentVersion) {
-        // The server transformed our ops against concurrent edits, so the ops
-        // we hold are not what it applied. Refetch instead of applying them.
-        await ctx.tripCache.refresh(tripKey);
-        return;
-      }
-
-      try {
-        ctx.tripCache.applyLocalOp(tripKey, ops, client.version);
-      } catch {
-        // The server already accepted the ops; only our local copy failed to
-        // follow. Reporting an error here would make the agent redo a write
-        // that landed, so resync the cache and carry on.
+      // From here on the server has accepted the ops. Nothing below may turn
+      // into a tool error: the agent would redo a write that already landed.
+      let resync = !!result && result.ackVersion !== result.sentVersion;
+      if (!resync) {
         try {
-          await ctx.tripCache.refresh(tripKey);
+          ctx.tripCache.applyLocalOp(tripKey, ops, client.version);
+        } catch {
+          resync = true;
+        }
+      }
+      if (resync) {
+        // Either the server transformed our ops against concurrent edits (so
+        // they are not what it applied) or our local copy could not follow.
+        try {
+          await ctx.tripCache.refresh(tripKey, entry);
         } catch {
           ctx.tripCache.invalidate(tripKey);
         }
@@ -118,10 +118,7 @@ function withAmbiguityHint(err: unknown): unknown {
   if (!(err instanceof WanderlogError) || !AMBIGUOUS_CODES.has(err.code) || err.hint) return err;
   return new WanderlogError(err.message, err.code, {
     hint: "The connection dropped after the change was sent, so it may already have been saved.",
-    followUps: [
-      "Call wanderlog_get_trip to check whether the change is there before retrying.",
-      "Retrying wanderlog_add_place or wanderlog_add_note is safe: an identical repeat is detected and skipped.",
-    ],
+    followUps: ["Call wanderlog_get_trip to check whether the change is there before retrying."],
   });
 }
 
