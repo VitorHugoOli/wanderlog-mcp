@@ -172,17 +172,18 @@ describe("applyOp – rich-text subtype", () => {
     expect(noteBlock.text!.ops![0]!.insert).toBe("sunscreen!\n");
   });
 
-  it("unknown subtype ops are silently skipped", () => {
+  it("rejects an unknown subtype op instead of dropping its content", () => {
     const doc = fresh(checklistTrip);
-    const next = applyOp(doc, [
-      {
-        p: ["itinerary", "sections", 2, "blocks", 1, "text"],
-        t: "future-unknown-type",
-        o: { something: true },
-      },
-    ]);
-    // Doc should be unchanged
-    const noteBlock = next.itinerary.sections[2]!.blocks[1] as NoteBlock;
+    const apply = () =>
+      applyOp(doc, [
+        {
+          p: ["itinerary", "sections", 2, "blocks", 1, "text"],
+          t: "future-unknown-type",
+          o: { something: true },
+        },
+      ]);
+    expect(apply).toThrow(/Unsupported ShareDB subtype "future-unknown-type"/);
+    const noteBlock = doc.itinerary.sections[2]!.blocks[1] as NoteBlock;
     expect(noteBlock.text!.ops![0]!.insert).toBe("Don't forget the sunscreen!\n");
   });
 });

@@ -7,6 +7,13 @@ import type { TripPlan } from "../types.js";
 
 export type { Json0Op };
 
+export type SubmitResult = {
+  /** Version the ops were built against and sent at. */
+  sentVersion: number;
+  /** Version the server applied them at; differs when it transformed them. */
+  ackVersion: number;
+};
+
 type InitFrame = {
   a: "init";
   id: string;
@@ -69,7 +76,7 @@ export class ShareDBClient extends EventEmitter {
   };
   private readonly pendingOps = new Map<
     number,
-    { resolve: () => void; reject: (err: Error) => void; timer: NodeJS.Timeout }
+    { resolve: (ackVersion: number) => void; reject: (err: Error) => void; timer: NodeJS.Timeout }
   >();
   private connectPromise?: Promise<void>;
   private subscribePromise?: Promise<TripPlan>;
@@ -274,15 +281,25 @@ export class ShareDBClient extends EventEmitter {
   }
 
   private handleOpFrame(frame: OpFrame): void {
-    const isOurAck =
-      frame.src === this.sessionId && frame.seq !== undefined && this.pendingOps.has(frame.seq);
+    const isOurs =
+      this.sessionId !== undefined && frame.src !== undefined && frame.src === this.sessionId;
+    const isOurAck = isOurs && frame.seq !== undefined && this.pendingOps.has(frame.seq);
 
     if (isOurAck) {
       const pending = this.pendingOps.get(frame.seq!)!;
       this.pendingOps.delete(frame.seq!);
       clearTimeout(pending.timer);
       this._version = frame.v + 1;
-      pending.resolve();
+      pending.resolve(frame.v);
+      return;
+    }
+
+    if (isOurs) {
+      // A late or repeated copy of our own op: it was already applied locally
+      // (or the cache was invalidated when its submit failed). Treating it as
+      // remote would apply it twice, and an `li` applied twice duplicates a
+      // block. Track the version only.
+      if (frame.op && frame.op.length > 0) this._version = frame.v + 1;
       return;
     }
 
@@ -370,9 +387,14 @@ export class ShareDBClient extends EventEmitter {
    * Submit a JSON0 op array to the server. Resolves when the server acks.
    * Throws if not subscribed, if the WebSocket is closed, or on ack timeout.
    *
+   * `baseVersion` is the version of the snapshot the ops were built from.
+   * Sending at that version (not the possibly newer current one) lets the
+   * server transform the ops against anything that landed in between; an
+   * untransformed op at a newer version can hit the wrong array index.
+   *
    * On successful ack, the local version is bumped to `frame.v + 1`.
    */
-  async submit(ops: Json0Op[]): Promise<void> {
+  async submit(ops: Json0Op[], baseVersion?: number): Promise<SubmitResult> {
     if (!this.subscribed) {
       throw new WanderlogError("Cannot submit op before subscribing to the trip", "not_subscribed");
     }
@@ -382,24 +404,29 @@ export class ShareDBClient extends EventEmitter {
 
     this.seqCounter += 1;
     const seq = this.seqCounter;
+    const sentVersion = baseVersion ?? this._version;
     const frame = {
       a: "op",
       c: "TripPlans",
       d: this.tripKey,
-      v: this._version,
+      v: sentVersion,
       seq,
       x: {},
       op: ops,
     };
 
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<SubmitResult>((resolve, reject) => {
       const timer = setTimeout(() => {
         if (this.pendingOps.has(seq)) {
           this.pendingOps.delete(seq);
           reject(new WanderlogError("Submit op timeout", "submit_timeout"));
         }
       }, 10_000);
-      this.pendingOps.set(seq, { resolve, reject, timer });
+      this.pendingOps.set(seq, {
+        resolve: (ackVersion) => resolve({ sentVersion, ackVersion }),
+        reject,
+        timer,
+      });
       try {
         this.send(frame);
       } catch (err) {

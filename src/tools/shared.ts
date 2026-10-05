@@ -2,6 +2,7 @@ import type { AppContext } from "../context.js";
 import type { CacheEntry } from "../cache/trip-cache.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
+import type { SubmitResult } from "../transport/sharedb.js";
 import { resolveDay } from "../resolvers/day.js";
 import type {
   Block,
@@ -56,18 +57,28 @@ export async function submitOp<T>(
 ): Promise<T> {
   return withSubmitLock(tripKey, async () => {
     const entry = await ctx.tripCache.getEntry(tripKey);
-    const client = ctx.pool.get(tripKey);
     const submit = async (ops: Json0Op[]): Promise<void> => {
+      // Read per batch: a refresh after a transformed op swaps the entry's client.
+      const client = entry.client ?? ctx.pool.get(tripKey);
+      const baseVersion = entry.version;
+      let result: SubmitResult | void;
       try {
         if (!client.isSubscribed) {
           throw new WanderlogError(`Trip ${tripKey} is not subscribed`, "not_subscribed");
         }
-        await submitWithRateLimitRetry(client, ops);
+        result = await submitWithRateLimitRetry(client, ops, baseVersion);
       } catch (err) {
         if (!isConfirmedNonApplication(err)) {
           ctx.tripCache.invalidate(tripKey);
         }
         throw err;
+      }
+
+      if (result && result.ackVersion !== result.sentVersion) {
+        // The server transformed our ops against concurrent edits, so the ops
+        // we hold are not what it applied. Refetch instead of applying them.
+        await ctx.tripCache.refresh(tripKey);
+        return;
       }
 
       try {
@@ -96,18 +107,20 @@ function isConfirmedNonApplication(err: unknown): boolean {
 const RATE_LIMIT_RETRY_DELAYS_MS = [2_000, 4_000, 8_000];
 
 // A rate-limited op (code 4001) is rejected before the server processes it —
-// it never acks and never applies — so resubmitting the same ops at the same
-// version is safe. Burst mutations (e.g. an LLM building a full itinerary)
-// hit the limit routinely; waiting out the window beats surfacing an error.
+// it never acks and never applies — so resubmitting the same ops is safe. They
+// are resent at the same base version, so if other edits landed during the
+// wait the server transforms the ops instead of applying them at stale paths.
+// Burst mutations (e.g. an LLM building a full itinerary) hit the limit
+// routinely; waiting out the window beats surfacing an error.
 async function submitWithRateLimitRetry(
-  client: { submit(ops: Json0Op[]): Promise<void> },
+  client: { submit(ops: Json0Op[], baseVersion?: number): Promise<SubmitResult | void> },
   ops: Json0Op[],
-): Promise<void> {
+  baseVersion: number,
+): Promise<SubmitResult | void> {
   let attempt = 0;
   for (;;) {
     try {
-      await client.submit(ops);
-      return;
+      return await client.submit(ops, baseVersion);
     } catch (err) {
       const isRateLimit = err instanceof WanderlogError && err.code === "rate_limited";
       if (!isRateLimit || attempt >= RATE_LIMIT_RETRY_DELAYS_MS.length) {

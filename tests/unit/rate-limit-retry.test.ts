@@ -126,13 +126,17 @@ describe("ShareDBClient bare {code, message} rejection frames", () => {
 
   function clientWithPendingOp(): {
     client: ShareDBClient;
-    pending: Promise<void>;
+    pending: Promise<unknown>;
   } {
     const client = new ShareDBClient(config, "tripA");
     const internals = client as unknown as {
       pendingOps: Map<
         number,
-        { resolve: () => void; reject: (err: Error) => void; timer: NodeJS.Timeout }
+        {
+          resolve: (ackVersion: number) => void;
+          reject: (err: Error) => void;
+          timer: NodeJS.Timeout;
+        }
       >;
       handleFrame: (
         frame: Record<string, unknown>,
@@ -140,7 +144,7 @@ describe("ShareDBClient bare {code, message} rejection frames", () => {
         connectResolve: () => void,
       ) => void;
     };
-    const pending = new Promise<void>((resolve, reject) => {
+    const pending = new Promise<unknown>((resolve, reject) => {
       internals.pendingOps.set(1, {
         resolve,
         reject,
@@ -205,7 +209,7 @@ describe("ShareDBClient bare {code, message} rejection frames", () => {
       c: "TripPlans",
       d: "tripA",
     });
-    await expect(pending).resolves.toBeUndefined();
+    await expect(pending).resolves.toBe(7);
     expect(client.version).toBe(8);
   });
 });

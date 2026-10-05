@@ -186,6 +186,49 @@ describe("ShareDBClient connection lifecycle", () => {
     client.close();
   });
 
+  it("submits at the given base version and reports the ack version", async () => {
+    const client = await subscribedClient();
+    const socket = latestSocket();
+    const submitted = client.submit([{ p: ["title"], oi: "x" }], 5);
+    const frame = socket.sent.at(-1)!;
+    expect(frame).toMatchObject({ a: "op", v: 5 });
+
+    socket.receive({ a: "op", c: "TripPlans", d: "tripA", v: 9, src: "sess", seq: frame.seq });
+    await expect(submitted).resolves.toEqual({ sentVersion: 5, ackVersion: 9 });
+    expect(client.version).toBe(10);
+    client.close();
+  });
+
+  it("never re-emits a late copy of our own op as a remote op", async () => {
+    const client = await subscribedClient();
+    const socket = latestSocket();
+    const remote = vi.fn();
+    client.on("remoteOp", remote);
+
+    const submitted = client.submit([{ p: ["title"], oi: "x" }]);
+    const seq = socket.sent.at(-1)!.seq;
+    const ack = { a: "op", c: "TripPlans", d: "tripA", v: 7, src: "sess", seq, op: [] };
+    socket.receive(ack);
+    await submitted;
+    socket.receive({ ...ack, op: [{ p: ["title"], oi: "x" }] });
+
+    expect(remote).not.toHaveBeenCalled();
+    expect(client.version).toBe(8);
+
+    socket.receive({
+      a: "op",
+      c: "TripPlans",
+      d: "tripA",
+      v: 8,
+      src: "other",
+      seq: 1,
+      op: [{ p: ["title"], oi: "y" }],
+    });
+    expect(remote).toHaveBeenCalledOnce();
+    expect(client.version).toBe(9);
+    client.close();
+  });
+
   it("deduplicates concurrent subscribe() calls into one request", async () => {
     const client = new ShareDBClient(config, "tripA");
     const a = client.subscribe();
