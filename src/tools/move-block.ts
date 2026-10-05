@@ -4,8 +4,16 @@ import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
 import type { TripPlan } from "../types.js";
+import { isPlaceBlock } from "../types.js";
 import { blockName, formatSection, resolveUniqueBlock } from "./block-refs.js";
-import { submitOp } from "./shared.js";
+import { resolveInsertionPoint } from "./insert-position.js";
+import {
+  findBlockById,
+  findBlockTargetSection,
+  findTargetSection,
+  isSystemSection,
+  submitOp,
+} from "./shared.js";
 
 export const moveBlockInputSchema = z
   .object({
@@ -38,12 +46,32 @@ export const moveBlockInputSchema = z
       .describe(
         "Move immediately after this naturally referenced place or reservation block in the same section. Notes and checklists are not valid targets.",
       ),
+    to_day: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Move the place to another day ('day 3', 'May 4', '2026-05-04'). Combine with position/before/after to place it within that day; omit them to append. Only places move across sections.",
+      ),
+    to_section: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Move the place to an undated list such as 'Places to visit' or a custom list (by heading). Combine with position/before/after, or omit them to append.",
+      ),
   })
   .refine(
-    (args) =>
-      [args.position, args.before, args.after].filter((value) => value !== undefined).length === 1,
+    (args) => {
+      const anchors = [args.position, args.before, args.after].filter((v) => v !== undefined);
+      if (args.to_day !== undefined && args.to_section !== undefined) return false;
+      return args.to_day !== undefined || args.to_section !== undefined
+        ? anchors.length <= 1
+        : anchors.length === 1;
+    },
     {
-      message: "Provide exactly one of position, before, or after.",
+      message:
+        "Provide exactly one of position, before or after — or a to_day/to_section destination (not both) with at most one of them.",
     },
   );
 
@@ -60,9 +88,12 @@ day filters and ordinal prefixes. Choose exactly one destination:
 
 Positions count all displayed blocks, including notes and checklists — but notes and checklists
 cannot be used as before/after targets, which resolve only to place or reservation blocks.
-Cross-section moves are not supported; do not emulate them by removing and re-adding the block,
-which discards its ID, notes, times, and booking details. If a reference is ambiguous, nothing is
-changed and the tool returns candidates for a more specific retry.
+
+To move a place to another day or list, pass to_day or to_section (optionally with position,
+before or after inside the destination). The block keeps its ID, note, times and photos. Never
+emulate a move by removing and re-adding the place, which discards all of that. Reservations
+(hotels, flights, transit, rental cars) stay in their own sections. If a reference is ambiguous,
+nothing is changed and the tool returns candidates for a more specific retry.
 `.trim();
 
 type Args = z.infer<typeof moveBlockInputSchema>;
@@ -89,6 +120,10 @@ export async function moveBlock(
       );
     }
 
+    const data = parsed.data;
+    if (data.to_day !== undefined || data.to_section !== undefined) {
+      return await moveAcrossSections(ctx, data);
+    }
     const outcome = await submitOp(ctx, parsed.data.trip_key, async (entry, submit) => {
       const prepared = buildMove(entry.snapshot, parsed.data);
       if (prepared.ops.length === 0) {
@@ -200,5 +235,70 @@ function buildMove(
       }
       return outcome;
     },
+  };
+}
+
+async function moveAcrossSections(
+  ctx: AppContext,
+  args: Args,
+): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+  const result = await submitOp(ctx, args.trip_key, async (entry, submit) => {
+    const trip = entry.snapshot;
+    const source = resolveUniqueBlock(trip, args.block, "block");
+    if (!isPlaceBlock(source.block) || isSystemSection(source.section)) {
+      throw new WanderlogValidationError(
+        `${blockName(source.block)} is a reservation and stays in its own section; only places move between days and lists.`,
+      );
+    }
+    const destination =
+      args.to_day !== undefined
+        ? findTargetSection(trip, args.to_day)
+        : findBlockTargetSection(trip, { section: args.to_section }, "place");
+    if (isSystemSection(destination.section)) {
+      throw new WanderlogValidationError(
+        `${formatSection(destination.section)} holds reservations; move places to a day or a list.`,
+      );
+    }
+    if (destination.index === source.sectionIndex) {
+      throw new WanderlogValidationError(
+        `${blockName(source.block)} is already in ${formatSection(source.section)}.`,
+        "To reorder within the same day or list, call again without to_day/to_section.",
+      );
+    }
+
+    const point = resolveInsertionPoint(trip, destination.index, args);
+    const block = structuredClone(source.block);
+    // Two sections, two arrays: removing from the source does not shift the
+    // destination index, and one submit makes the move all-or-nothing.
+    await submit([
+      {
+        p: ["itinerary", "sections", source.sectionIndex, "blocks", source.blockIndex],
+        ld: source.block,
+      },
+      { p: ["itinerary", "sections", destination.index, "blocks", point.index], li: block },
+    ]);
+
+    const moved = findBlockById(entry.snapshot, block.id as number);
+    const landed = moved && entry.snapshot.itinerary.sections[moved.sectionIndex]?.id;
+    if (!moved || landed !== destination.section.id || !isDeepStrictEqual(moved.block, block)) {
+      throw new WanderlogError(
+        `The move was sent but could not be verified. Check "${trip.title}" with wanderlog_get_trip before retrying.`,
+        "move_verification_failed",
+      );
+    }
+    return {
+      name: blockName(block),
+      from: `${formatSection(source.section)} (position ${source.blockIndex + 1})`,
+      to: `${formatSection(destination.section)} ${point.description}`,
+      tripTitle: trip.title,
+    };
+  });
+  return {
+    content: [
+      {
+        type: "text",
+        text: `Moved ${result.name} from ${result.from} to ${result.to} in "${result.tripTitle}", keeping its note, times and photos.`,
+      },
+    ],
   };
 }
