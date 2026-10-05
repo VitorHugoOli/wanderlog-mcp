@@ -166,3 +166,33 @@ describe("submitOp version handling", () => {
     expect(pool.created).toHaveLength(2);
   });
 });
+
+describe("refresh racing other reads", () => {
+  it("shares one subscription, so remote ops are applied exactly once", async () => {
+    const { pool, cache } = setup();
+    await cache.get("tripA");
+
+    await Promise.all([cache.refresh("tripA"), cache.get("tripA"), cache.get("tripA")]);
+
+    const live = pool.get();
+    expect(pool.created).toHaveLength(2);
+    expect(live.listenerCount("remoteOp")).toBe(1);
+    live.version += 1;
+    live.emit("remoteOp", [{ p: ["itinerary", "sections", 0], li: { blocks: [] } }], live.version);
+    expect((await cache.get("tripA")).itinerary.sections).toHaveLength(1);
+  });
+
+  it("never reports a failure for a write the server accepted", async () => {
+    const { pool, ctx } = setup();
+    const first = pool.get();
+    first.behaviour = async (_ops, baseVersion) => ({ sentVersion: baseVersion!, ackVersion: 99 });
+    // The resync after the transformed ack fails (e.g. a network blip).
+    ctx.tripCache.refresh = async () => {
+      throw new WanderlogError("socket hang up", "network");
+    };
+
+    await expect(
+      submitOp(ctx, "tripA", (entry, submit) => submit(setTitle(entry.snapshot.title, "x"))),
+    ).resolves.toBeUndefined();
+  });
+});

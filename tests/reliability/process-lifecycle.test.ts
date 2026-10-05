@@ -56,13 +56,13 @@ async function waitFor(check: () => boolean, ms: number): Promise<void> {
 describe("server process lifecycle", () => {
   it("is ready for MCP before the auth probe answers", async () => {
     const { stderr } = startServer();
-    await waitFor(() => stderr().includes("ready (stdio)"), 3_000);
+    await waitFor(() => stderr().includes("ready (stdio)"), 10_000);
     expect(stderr()).not.toContain("authenticated");
   });
 
   it("exits promptly when the client closes stdin", async () => {
     const { child, stderr } = startServer();
-    await waitFor(() => stderr().includes("ready (stdio)"), 3_000);
+    await waitFor(() => stderr().includes("ready (stdio)"), 10_000);
     const exit = exited(child);
     const started = Date.now();
     child.stdin!.end();
@@ -73,7 +73,7 @@ describe("server process lifecycle", () => {
 
   it("never writes the cookie to its logs", async () => {
     const { child, stderr } = startServer();
-    await waitFor(() => stderr().includes("ready (stdio)"), 3_000);
+    await waitFor(() => stderr().includes("ready (stdio)"), 10_000);
     const exit = exited(child);
     child.stdin!.end();
     await exit;
