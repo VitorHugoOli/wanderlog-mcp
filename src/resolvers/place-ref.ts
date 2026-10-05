@@ -254,8 +254,12 @@ function finalize(candidates: PlaceRefMatch[]): PlaceRefResult {
 
 function normalize(s: string): string {
   // Collapse runs of whitespace and punctuation dashes (hyphens, en/em-dashes)
-  // so "Roppongi Hills - Tokyo City View" matches "Roppongi Hills Tokyo City View".
+  // so "Roppongi Hills - Tokyo City View" matches "Roppongi Hills Tokyo City View",
+  // and drop diacritics so "park guell" finds "Park Güell" and "sao jorge" finds
+  // "São Jorge" — users rarely type the accents.
   return s
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
     .replace(/[\s\-–—]+/g, " ")
     .trim()
     .toLowerCase();

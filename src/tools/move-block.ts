@@ -3,9 +3,8 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
-import { resolvePlaceRef, type PlaceRefMatch } from "../resolvers/place-ref.js";
-import type { Block, Section, TripPlan } from "../types.js";
-import { isPlaceBlock, isTransitBlock } from "../types.js";
+import type { TripPlan } from "../types.js";
+import { blockName, formatSection, resolveUniqueBlock } from "./block-refs.js";
 import { submitOp } from "./shared.js";
 
 export const moveBlockInputSchema = z
@@ -23,7 +22,7 @@ export const moveBlockInputSchema = z
       .min(1)
       .optional()
       .describe(
-        "Move to this 1-based position in the section's complete displayed block order, including notes and checklists.",
+        "Move to this 1-based position in the section — the numbers wanderlog_get_trip shows for each day/list, which count notes and checklists.",
       ),
     before: z
       .string()
@@ -202,49 +201,4 @@ function buildMove(
       return outcome;
     },
   };
-}
-
-function resolveUniqueBlock(trip: TripPlan, ref: string, label: string): PlaceRefMatch {
-  const result = resolvePlaceRef(trip, ref);
-  if (result.kind === "none") {
-    throw new WanderlogValidationError(
-      `No itinerary block matching "${ref}" was found in "${trip.title}".`,
-      "Use wanderlog_get_trip to inspect the current itinerary, then retry with a more specific name or role.",
-    );
-  }
-  if (result.kind === "ambiguous") {
-    const candidates = result.candidates
-      .map(
-        (candidate, index) =>
-          `  ${index + 1}. ${blockName(candidate.block)} — ${formatSection(candidate.section)}`,
-      )
-      .join("\n");
-    throw new WanderlogValidationError(
-      `The ${label} reference "${ref}" is ambiguous:\n${candidates}`,
-      `Retry with an ordinal prefix such as "1st ${ref}" or add a day filter.`,
-    );
-  }
-  return result.match;
-}
-
-function blockName(block: Block): string {
-  if (isPlaceBlock(block)) return block.place.name;
-  if (block.type === "flight") {
-    const flightInfo = "flightInfo" in block ? block.flightInfo : undefined;
-    const airline = flightInfo?.airline?.iata;
-    const number = flightInfo?.number;
-    return airline || number ? `${airline ?? ""}${number ?? ""} flight` : "flight";
-  }
-  if (isTransitBlock(block)) {
-    return block.carrier ? `${block.carrier} ${block.type}` : block.type;
-  }
-  if (block.type === "rentalCar") return "rental car";
-  return `${block.type} block`;
-}
-
-function formatSection(section: Section): string {
-  if (section.mode === "dayPlan" && section.date) {
-    return `day ${section.date}`;
-  }
-  return `"${section.heading || section.type}"`;
 }

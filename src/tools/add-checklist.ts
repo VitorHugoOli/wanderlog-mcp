@@ -2,6 +2,12 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
+import {
+  hasInsertAnchor,
+  insertAnchorSchema,
+  resolveInsertionPoint,
+  type InsertAnchor,
+} from "./insert-position.js";
 import { buildChecklistBlock, findBlockTargetSection, requireUserId, submitOp } from "./shared.js";
 
 export const addChecklistInputSchema = {
@@ -34,6 +40,7 @@ export const addChecklistInputSchema = {
     .describe(
       "Optional undated section to add the checklist to, identified by its heading (e.g. 'Notes', 'Trip Preparations', or 'Places to visit'). Matching is case-insensitive and takes precedence over 'day'. Omit both to add to the 'Places to visit' list.",
     ),
+  ...insertAnchorSchema,
 };
 
 export const addChecklistDescription = `
@@ -49,6 +56,9 @@ Supply "day" for a dated itinerary day or "section" for an undated section such 
 or "Trip Preparations". When both are provided, "section" takes precedence. Omit both to add
 to the default "Places to visit" list.
 
+Placement: appended at the end by default; pass ONE of "position" (the number wanderlog_get_trip
+shows), "before" or "after" (a place in the same day/section) to put it elsewhere.
+
 Returns a confirmation including the checklist title and item count.
 `.trim();
 
@@ -58,7 +68,7 @@ type Args = {
   title?: string;
   day?: string;
   section?: string;
-};
+} & InsertAnchor;
 
 export async function addChecklist(
   ctx: AppContext,
@@ -70,18 +80,20 @@ export async function addChecklist(
       const trip = entry.snapshot;
       const target = findBlockTargetSection(trip, args, "checklist");
       const block = buildChecklistBlock(args.items, args.title ?? "", userId);
+      const point = resolveInsertionPoint(trip, target.index, args);
       const ops: Json0Op[] = [
-        {
-          p: ["itinerary", "sections", target.index, "blocks", target.section.blocks.length],
-          li: block,
-        },
+        { p: ["itinerary", "sections", target.index, "blocks", point.index], li: block },
       ];
       await submit(ops);
-      return { targetLabel: target.label, tripTitle: trip.title };
+      return {
+        targetLabel: target.label,
+        placement: hasInsertAnchor(args) ? ` ${point.description}` : "",
+        tripTitle: trip.title,
+      };
     });
 
     const titlePart = args.title ? `"${args.title}" ` : "";
-    const text = `Added checklist ${titlePart}(${args.items.length} items) to ${result.targetLabel} in "${result.tripTitle}".`;
+    const text = `Added checklist ${titlePart}(${args.items.length} items) to ${result.targetLabel}${result.placement} in "${result.tripTitle}".`;
     return { content: [{ type: "text", text }] };
   } catch (err) {
     const msg =

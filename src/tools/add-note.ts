@@ -3,6 +3,7 @@ import type { AppContext } from "../context.js";
 import { WanderlogError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
 import { ALLOW_DUPLICATE_HINT, findDuplicateNote } from "./duplicate-guard.js";
+import { hasInsertAnchor, insertAnchorSchema, resolveInsertionPoint } from "./insert-position.js";
 import { buildNoteBlock, findBlockTargetSection, requireUserId, submitOp } from "./shared.js";
 
 export const addNoteInputSchema = z.object({
@@ -25,6 +26,7 @@ export const addNoteInputSchema = z.object({
     .describe(
       "Optional undated section to add the note to, identified by its heading (e.g. 'Notes', 'Food & Drink', or 'Places to visit'). Matching is case-insensitive and takes precedence over 'day'. Omit both to add to the 'Places to visit' list.",
     ),
+  ...insertAnchorSchema,
   allow_duplicate: z
     .boolean()
     .optional()
@@ -47,6 +49,10 @@ When to add a note (do this after adding each place or group of places):
 - Time guidance: "Budget 2-3 hours here. Open 10am-6pm, closed Tuesdays"
 - Neighborhood context: "This area is great for wandering — no rush, just explore the lanes"
 
+Placement: by default the note goes at the end of the day/section. Pass ONE of "position" (the
+number wanderlog_get_trip shows; between items 3 and 4 is 4), "before" or "after" (a place in
+the same day/section) to put it elsewhere — e.g. after: "Louvre" for directions to the next stop.
+
 A note whose text is identical to one already in that day/section is not added again (so a retry
 after an unclear error never duplicates it); pass allow_duplicate: true if it is intended.
 
@@ -65,27 +71,27 @@ export async function addNote(
       const trip = entry.snapshot;
       const target = findBlockTargetSection(trip, args, "note");
       if (!args.allow_duplicate && findDuplicateNote(target.section, args.text)) {
-        return { added: false, targetLabel: target.label, tripTitle: trip.title };
+        return { added: false, targetLabel: target.label, placement: "", tripTitle: trip.title };
       }
+      const point = resolveInsertionPoint(trip, target.index, args);
       // Insert and text in one submit, so the note can never land empty.
-      const blockPath = [
-        "itinerary",
-        "sections",
-        target.index,
-        "blocks",
-        target.section.blocks.length,
-      ];
+      const blockPath = ["itinerary", "sections", target.index, "blocks", point.index];
       const ops: Json0Op[] = [
         { p: blockPath, li: buildNoteBlock(userId) },
         { p: [...blockPath, "text"], t: "rich-text", o: [{ insert: `${args.text}\n` }] },
       ];
       await submit(ops);
-      return { added: true, targetLabel: target.label, tripTitle: trip.title };
+      return {
+        added: true,
+        targetLabel: target.label,
+        placement: hasInsertAnchor(args) ? ` ${point.description}` : "",
+        tripTitle: trip.title,
+      };
     });
 
     const preview = args.text.length > 60 ? `${args.text.slice(0, 57)}…` : args.text;
     const text = result.added
-      ? `Added note "${preview}" to ${result.targetLabel} in "${result.tripTitle}".`
+      ? `Added note "${preview}" to ${result.targetLabel}${result.placement} in "${result.tripTitle}".`
       : `A note "${preview}" is already in ${result.targetLabel} in "${result.tripTitle}" — nothing added. ${ALLOW_DUPLICATE_HINT}`;
     return { content: [{ type: "text", text }] };
   } catch (err) {
