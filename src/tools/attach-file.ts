@@ -2,7 +2,6 @@ import path from "node:path";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogNotFoundError, WanderlogValidationError } from "../errors.js";
-import type { Json0Op } from "../ot/apply.js";
 import { resolveAttachmentRef } from "../resolvers/attachment-ref.js";
 import { resolvePlaceRef } from "../resolvers/place-ref.js";
 import { isPlaceBlock } from "../types.js";
