@@ -240,13 +240,11 @@ describe("attachFile — reference mode (existing attachment)", () => {
     });
     expect(result.isError).toBeUndefined();
     expect(uploadCalls).toHaveLength(0);
-    const op = submittedOps[0]![0] as {
-      p: unknown[];
-      oi: Array<{ key: string; fileName: string }>;
-    };
-    // Tokyo Tower already had ticket.pdf; new array should have ticket + map
-    expect(op.oi).toHaveLength(2);
-    expect(op.oi.map((a) => a.key).sort()).toEqual(["AAA111", "BBB222"]);
+    const op = submittedOps[0]![0] as { p: unknown[]; li: { key: string; fileName: string } };
+    // Tokyo Tower already had ticket.pdf (AAA111): the map is appended with li
+    // after it, so a concurrent attach elsewhere cannot drop either.
+    expect(op.p.at(-1)).toBe(1);
+    expect(op.li.key).toBe("BBB222");
   });
 
   it("attaches by filename substring", async () => {
@@ -258,8 +256,8 @@ describe("attachFile — reference mode (existing attachment)", () => {
     });
     expect(result.isError).toBeUndefined();
     expect(uploadCalls).toHaveLength(0);
-    const op = submittedOps[0]![0] as { oi: Array<{ key: string }> };
-    expect(op.oi.some((a) => a.key === "BBB222")).toBe(true);
+    const op = submittedOps[0]![0] as { li: { key: string } };
+    expect(op.li.key).toBe("BBB222");
   });
 
   it("rejects when both file_path and attachment are given", async () => {

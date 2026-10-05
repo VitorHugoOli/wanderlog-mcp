@@ -34,6 +34,15 @@ export async function readUploadableFile(filePath: string): Promise<Buffer> {
   } catch (err) {
     throw new WanderlogValidationError(`Cannot read "${filePath}": ${(err as Error).message}`);
   }
+  const root = process.env.WANDERLOG_UPLOAD_DIR;
+  if (root) {
+    const realRoot = await realpath(root).catch(() => root);
+    if (!real.startsWith(realRoot + path.sep)) {
+      throw new WanderlogValidationError(
+        `Uploads are limited to ${root} on this server (WANDERLOG_UPLOAD_DIR).`,
+      );
+    }
+  }
   const ext = path.extname(real).toLowerCase();
   if (!UPLOADABLE_EXTENSIONS.has(ext)) {
     throw new WanderlogValidationError(

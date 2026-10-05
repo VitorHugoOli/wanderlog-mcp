@@ -47,7 +47,14 @@ export async function undo(
             );
           }
           const before = entry.version;
-          for (const batch of top.batches) await submit(batch);
+          try {
+            for (const batch of top.batches) await submit(batch);
+          } catch (err) {
+            // Part of the entry may have landed; nothing on the stack is
+            // trustworthy any more.
+            clearUndo(args.trip_key);
+            throw err;
+          }
           stack.pop();
           done.push(top.summary);
           // The trip is now back at the state the next entry left it in; only

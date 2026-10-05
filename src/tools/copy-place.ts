@@ -9,6 +9,7 @@ import {
   findTargetSection,
   generateBlockId,
   isSystemSection,
+  requireUserId,
   submitOp,
 } from "./shared.js";
 
@@ -70,6 +71,9 @@ export async function copyPlace(
       const copy: Record<string, unknown> = {
         ...structuredClone(source.block),
         id: generateBlockId(),
+        // A copy is a new item: no inherited upvotes, added by the caller.
+        upvotedBy: [],
+        addedBy: { type: "user", userId: requireUserId(ctx) },
       };
       if (!args.keep_times) {
         delete copy.startTime;
