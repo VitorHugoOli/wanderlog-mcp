@@ -11,7 +11,11 @@ export type CacheEntry = {
   client: ShareDBClient;
   remoteOpListener: (ops: Json0Op[], version: number) => void;
   closedListener: (code: number) => void;
+  lastUsedAt?: number;
 };
+
+/** Trips untouched this long have their socket closed and snapshot dropped. */
+export const IDLE_EVICT_MS = 30 * 60_000;
 
 /**
  * Live trip cache. On first access, validates the trip exists via REST
@@ -25,6 +29,7 @@ export type CacheEntry = {
 export class TripCache {
   private readonly entries = new Map<string, CacheEntry>();
   private readonly subscribing = new Map<string, Promise<CacheEntry>>();
+  private sweepTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly rest: RestClient,
@@ -43,7 +48,10 @@ export class TripCache {
   private async ensureEntry(tripKey: string): Promise<CacheEntry> {
     const existing = this.entries.get(tripKey);
     if (existing) {
-      if (this.isFresh(existing)) return existing;
+      if ((await this.isAlive(existing)) && this.isFresh(existing)) {
+        existing.lastUsedAt = Date.now();
+        return existing;
+      }
       // Serving a snapshot that no longer matches the live document is how an
       // agent comes to believe its own write did not land, and repeats it.
       this.deleteEntry(tripKey);
@@ -59,6 +67,11 @@ export class TripCache {
     } finally {
       this.subscribing.delete(tripKey);
     }
+  }
+
+  private async isAlive(entry: CacheEntry): Promise<boolean> {
+    const client = entry.client as Partial<Pick<ShareDBClient, "ensureAlive">>;
+    return typeof client.ensureAlive === "function" ? client.ensureAlive() : true;
   }
 
   /**
@@ -136,8 +149,10 @@ export class TripCache {
         client,
         remoteOpListener,
         closedListener,
+        lastUsedAt: Date.now(),
       };
       this.entries.set(tripKey, entry);
+      this.ensureSweep();
       return entry;
     } catch (err) {
       this.pool.evict(tripKey, client);
@@ -165,6 +180,27 @@ export class TripCache {
     this.pool.evict(tripKey, entry.client);
   }
 
+  /**
+   * Each cached trip holds an open socket for the life of the process, and a
+   * long-lived MCP session touches many trips. Close the ones nobody used for
+   * a while; the next access resubscribes.
+   */
+  private ensureSweep(): void {
+    if (this.sweepTimer) return;
+    this.sweepTimer = setInterval(() => this.evictIdle(), 5 * 60_000);
+    this.sweepTimer.unref();
+  }
+
+  evictIdle(now = Date.now()): void {
+    for (const [tripKey, entry] of this.entries) {
+      if (now - (entry.lastUsedAt ?? now) > IDLE_EVICT_MS) this.deleteEntry(tripKey);
+    }
+    if (this.entries.size === 0 && this.sweepTimer) {
+      clearInterval(this.sweepTimer);
+      this.sweepTimer = undefined;
+    }
+  }
+
   invalidate(tripKey: string): void {
     this.deleteEntry(tripKey);
   }
@@ -173,5 +209,7 @@ export class TripCache {
     for (const tripKey of this.entries.keys()) {
       this.deleteEntry(tripKey);
     }
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+    this.sweepTimer = undefined;
   }
 }
