@@ -36,7 +36,7 @@
     "probe": "node --env-file=.env probe.mjs",
     "test": "vitest run tests/unit",
     "test:watch": "vitest tests/unit",
-    "test:integration": "node --env-file=.env ./node_modules/vitest/vitest.mjs run tests/integration",
+    "test:integration": "node --env-file=.env ./node_modules/vitest/vitest.mjs run tests/integration --no-file-parallelism",
     "test:all": "npm run test && npm run test:integration",
     "typecheck": "tsc --noEmit",
     "eval": "node --env-file=.env --import tsx evals/run.ts",
