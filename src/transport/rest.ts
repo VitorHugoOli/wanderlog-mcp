@@ -187,6 +187,25 @@ export class RestClient {
   }
 
   async getTripWithResources(tripKey: string): Promise<{ tripPlan: TripPlan; geos: Geo[] }> {
+    try {
+      return await this.fetchTripWithResources(tripKey);
+    } catch (err) {
+      // An unknown key comes back as HTTP 200 success:false "Couldn't fetch
+      // keyInfo for key …"; report it as the not-found it is.
+      if (
+        err instanceof WanderlogError &&
+        err.code === "api_error" &&
+        /keyInfo/i.test(err.message)
+      ) {
+        throw new WanderlogNotFoundError("Trip", tripKey);
+      }
+      throw err;
+    }
+  }
+
+  private async fetchTripWithResources(
+    tripKey: string,
+  ): Promise<{ tripPlan: TripPlan; geos: Geo[] }> {
     const env = await this.request<
       Envelope<{
         tripPlan?: TripPlan;

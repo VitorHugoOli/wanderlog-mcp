@@ -145,3 +145,26 @@ describe("RestClient Retry-After cap", () => {
     await expect(user).resolves.toMatchObject({ id: 5 });
   });
 });
+
+describe("RestClient unknown trip key", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  it("maps Wanderlog's success:false keyInfo error to Trip not found", async () => {
+    globalThis.fetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ success: false, messages: ["Couldn't fetch keyInfo for key nope"] }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+    const rest = new RestClient({
+      cookieHeader: "c",
+      baseUrl: "https://x",
+      userAgent: "t",
+    } as never);
+    await expect(rest.getTrip("nope")).rejects.toMatchObject({ code: "not_found" });
+  });
+});
