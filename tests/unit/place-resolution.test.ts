@@ -128,3 +128,19 @@ describe("resolvePlaceQuery policy", () => {
     expect(await resolvePlaceQuery(ctx, "zzzz", CENTER)).toEqual({ kind: "none" });
   });
 });
+
+describe("Phase 3 review regressions", () => {
+  it("accepts a bare name whose words all appear in the top hit (Narita → airport)", async () => {
+    const { ctx } = ctxWith(
+      [
+        [
+          suggestion("nrt", "Narita International Airport", "Chiba"),
+          suggestion("city", "Narita", "Chiba"),
+        ],
+      ],
+      { nrt: { name: "Narita International Airport" } },
+    );
+    const outcome = await resolvePlaceQuery(ctx, "Narita", CENTER);
+    expect(outcome).toMatchObject({ kind: "resolved", detail: { place_id: "nrt" } });
+  });
+});

@@ -63,6 +63,11 @@ export function placeMatchScore(query: string, candidate: string): number {
 
   let shared = 0;
   for (const token of queryTokens) if (candidateTokens.has(token)) shared += 1;
+  // Every word of the query appears in the candidate ("Narita" → "Narita
+  // International Airport"): the candidate is a plausible reading of a short
+  // query even though the extra words drag Dice down.
+  if (shared === queryTokens.size)
+    return Math.max(CONFIDENT_SCORE, (2 * shared) / (queryTokens.size + candidateTokens.size));
   const dice = (2 * shared) / (queryTokens.size + candidateTokens.size);
 
   const nested =
@@ -140,7 +145,13 @@ async function autocompleteWithFallback(
   if (biased.length > 0) return { predictions: biased, unbiased: false };
   try {
     return { predictions: await search(UNBIASED_SEARCH_RADIUS_M), unbiased: true };
-  } catch {
+  } catch (err) {
+    // Rate limits and auth are real failures, not "nothing found".
+    if (
+      err instanceof WanderlogError &&
+      (err.code === "rate_limited" || err.code === "auth_expired")
+    )
+      throw err;
     return { predictions: [], unbiased: false };
   }
 }

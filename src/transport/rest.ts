@@ -158,7 +158,15 @@ export class RestClient {
   }
 
   async getUser(): Promise<User> {
-    const env = await this.request<Envelope<{ user?: User }>>("GET", "/api/user");
+    let env: Envelope<{ user?: User }>;
+    try {
+      env = await this.request<Envelope<{ user?: User }>>("GET", "/api/user");
+    } catch (err) {
+      // A rejected session answered as 200 success:false is still an auth
+      // failure; startup must report it as one (invariant 4).
+      if (err instanceof WanderlogError && err.code === "api_error") throw new WanderlogAuthError();
+      throw err;
+    }
     if (!env.user || typeof env.user.id !== "number") {
       throw new WanderlogAuthError("No user returned for current session — cookie may be invalid");
     }

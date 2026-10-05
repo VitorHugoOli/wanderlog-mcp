@@ -148,13 +148,21 @@ export async function removeNote(
       }
       if (total === 1 && paragraphs.length === 1) {
         const { sectionIndex, paragraph, docLength } = paragraphs[0]!;
-        // Never delete the document's final newline: a Quill doc must end with one.
-        const length =
-          paragraph.offset + paragraph.length >= docLength
-            ? paragraph.length - 1
-            : paragraph.length;
+        // Never delete the document's final newline (a Quill doc must end with
+        // one). For the last paragraph, take the newline before it instead, so
+        // no empty line (or empty bullet) is left behind.
+        const isLast = paragraph.offset + paragraph.length >= docLength;
+        let start = paragraph.offset;
+        let length = paragraph.length;
+        if (isLast) {
+          length -= 1;
+          if (start > 0) {
+            start -= 1;
+            length += 1;
+          }
+        }
         const o: Array<Record<string, unknown>> = [];
-        if (paragraph.offset > 0) o.push({ retain: paragraph.offset });
+        if (start > 0) o.push({ retain: start });
         o.push({ delete: length });
         await submit([{ p: ["itinerary", "sections", sectionIndex, "text"], t: "rich-text", o }]);
         return { plainText: paragraph.text, tripTitle: trip.title };

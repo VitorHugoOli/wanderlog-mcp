@@ -40,7 +40,7 @@ export function resolvePerson(trip: TripPlan, ref: string, selfId?: number): Con
   }
   throw new WanderlogValidationError(
     `"${ref}" is not a tripmate on "${trip.title}". Tripmates: ${names.join(", ")}`,
-    "Invite them first with wanderlog_invite_collaborator, or omit the person to default to you.",
+    "Only people already on the trip can be named (invite them in the Wanderlog app), or omit the person to default to you.",
   );
 }
 
@@ -160,8 +160,11 @@ export async function setBudget(ctx: AppContext, args: SetBudgetArgs): Promise<T
       if (Object.keys(pending).length === 0) {
         return { changes, tripTitle: trip.title };
       }
-      if (!hasBudget) {
-        ops.push({ p: ["itinerary", "budget"], oi: { expenses: [], ...pending } });
+      if (!hasBudget || trip.itinerary.budget == null) {
+        // A missing or null budget is created whole (od must match an existing null).
+        const op: Json0Op = { p: ["itinerary", "budget"], oi: { expenses: [], ...pending } };
+        if (hasBudget) op.od = null;
+        ops.push(op);
       } else {
         for (const [key, value] of Object.entries(pending)) {
           const op: Json0Op = { p: ["itinerary", "budget", key], oi: value };

@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
@@ -138,6 +139,7 @@ export function buildDuplicateDayRepairOps(trip: TripPlan): {
       sections[i]!.blocks.length > sections[best]!.blocks.length ? i : best,
     );
     const survivor = sections[survivorIndex]!;
+    const seenIds = new Set(survivor.blocks.map((b) => b.id as number));
     let appendAt = survivor.blocks.length;
     let moved = 0;
     let headingCarried = Boolean(survivor.heading?.trim());
@@ -145,9 +147,17 @@ export function buildDuplicateDayRepairOps(trip: TripPlan): {
       if (i === survivorIndex) continue;
       const duplicate = sections[i]!;
       for (const block of duplicate.blocks) {
+        // A cloned day carries the same blocks (same ids): appending them again
+        // would leave two blocks sharing an id, which breaks id-based lookups.
+        const sameId = survivor.blocks.find((b) => b.id === block.id);
+        if (sameId && isDeepStrictEqual(sameId, block)) continue;
+        if (seenIds.has(block.id as number) && !sameId) continue;
+        const copy = structuredClone(block);
+        if (sameId || seenIds.has(copy.id as number)) copy.id = generateBlockId();
+        seenIds.add(copy.id as number);
         appendOps.push({
           p: ["itinerary", "sections", survivorIndex, "blocks", appendAt++],
-          li: structuredClone(block),
+          li: copy,
         });
         moved++;
       }

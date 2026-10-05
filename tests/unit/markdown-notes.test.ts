@@ -119,3 +119,11 @@ describe("markdown in note-writing tools", () => {
     ]);
   });
 });
+
+describe("markdown edge cases (Phase 3 review)", () => {
+  it("does not turn '>30 min' into a quote", async () => {
+    const { ctx, day } = makeFakeContext();
+    await addNote(ctx, { trip_key: "T", text: ">30 min walk", day: DAY });
+    expect((day().at(-1) as { text: QuillDelta }).text.ops).toEqual([{ insert: ">30 min walk\n" }]);
+  });
+});

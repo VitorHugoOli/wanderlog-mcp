@@ -124,3 +124,11 @@ describe("edit_note / remove_note in the notes area", () => {
     expect(submittedOps).toHaveLength(0);
   });
 });
+
+describe("notes area last paragraph (Phase 3 review)", () => {
+  it("removing the last paragraph leaves no empty trailing line", async () => {
+    const { ctx, notesText } = makeFakeContext(tripWithNotes(doc("Keep\nGone\n")));
+    await removeNote(ctx, { trip_key: "T", text: "gone" });
+    expect(notesText()).toBe("Keep\n");
+  });
+});
