@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { WanderlogError, WanderlogNotFoundError } from "../errors.js";
+import { WanderlogError, WanderlogNotFoundError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
 import { resolveDay } from "../resolvers/day.js";
 import type { NoteBlock, QuillDelta, TripPlan } from "../types.js";
@@ -8,7 +8,18 @@ import { findDaySectionByDate, submitOp } from "./shared.js";
 
 export const removeNoteInputSchema = {
   trip_key: z.string().min(1).describe("The trip to remove from."),
-  text: z.string().min(1).describe("Substring to match against note content (case-insensitive)."),
+  text: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Substring to match against note content (case-insensitive)."),
+  note_ids: z
+    .array(z.number().int())
+    .min(1)
+    .optional()
+    .describe(
+      "Exact note block ids to remove (shown as [id …] by wanderlog_get_trip with response_format 'detailed'). Removes all of them in one change; use instead of text when several notes share wording.",
+    ),
   day: z
     .string()
     .optional()
@@ -25,12 +36,14 @@ The match is case-insensitive. If exactly one note matches, it is deleted. If no
 an error is returned. If multiple notes match, a list of previews is returned — supply a more
 specific substring to narrow to one.
 
-Use the optional 'day' filter to limit the search to a specific day.
+Use the optional 'day' filter to limit the search to a specific day. To remove specific note
+blocks (or several at once) pass note_ids from wanderlog_get_trip's detailed output instead.
 `.trim();
 
 type Args = {
   trip_key: string;
-  text: string;
+  text?: string;
+  note_ids?: number[];
   day?: string;
 };
 
@@ -138,10 +151,15 @@ export async function removeNote(
   args: Args,
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   try {
+    if (args.note_ids) return await removeNotesById(ctx, args.trip_key, args.note_ids);
+    if (!args.text) {
+      throw new WanderlogValidationError("Give either text (a substring) or note_ids.");
+    }
+    const query = args.text;
     const result = await submitOp(ctx, args.trip_key, async (entry, submit) => {
       const trip = entry.snapshot;
-      const matches = findNoteMatches(trip, args.text, args.day);
-      const paragraphs = args.day ? [] : findNotesAreaParagraphs(trip, args.text);
+      const matches = findNoteMatches(trip, query, args.day);
+      const paragraphs = args.day ? [] : findNotesAreaParagraphs(trip, query);
       const total = matches.length + paragraphs.length;
       if (total === 0) {
         throw new WanderlogNotFoundError("Note", args.text);
@@ -210,4 +228,48 @@ export async function removeNote(
         : `Unexpected error: ${(err as Error).message}`;
     return { content: [{ type: "text", text: msg }], isError: true };
   }
+}
+
+/** Remove note blocks by exact id, all in one submit (wcrusher@92dc395 idea). */
+async function removeNotesById(
+  ctx: AppContext,
+  tripKey: string,
+  ids: number[],
+): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+  const result = await submitOp(ctx, tripKey, async (entry, submit) => {
+    const trip = entry.snapshot;
+    const wanted = new Set(ids);
+    const found: Array<{ sectionIndex: number; blockIndex: number; block: NoteBlock }> = [];
+    trip.itinerary.sections.forEach((section, sectionIndex) =>
+      section.blocks.forEach((block, blockIndex) => {
+        if (block.type === "note" && wanted.has(block.id as number)) {
+          found.push({ sectionIndex, blockIndex, block: block as NoteBlock });
+        }
+      }),
+    );
+    const missing = ids.filter((id) => !found.some((f) => f.block.id === id));
+    if (missing.length > 0) {
+      throw new WanderlogNotFoundError("Note", missing.map((id) => `id ${id}`).join(", "));
+    }
+    // Highest index first within each section so each ld keeps the next valid.
+    const ops: Json0Op[] = [...found]
+      .sort((a, b) => b.sectionIndex - a.sectionIndex || b.blockIndex - a.blockIndex)
+      .map((f) => ({
+        p: ["itinerary", "sections", f.sectionIndex, "blocks", f.blockIndex],
+        ld: f.block,
+      }));
+    await submit(ops);
+    return {
+      previews: found.map((f) => notePreview(extractPlainText(f.block))),
+      tripTitle: trip.title,
+    };
+  });
+  return {
+    content: [
+      {
+        type: "text",
+        text: `Removed ${result.previews.length} note(s) from "${result.tripTitle}": ${result.previews.map((p) => `"${p}"`).join(", ")}.`,
+      },
+    ],
+  };
 }

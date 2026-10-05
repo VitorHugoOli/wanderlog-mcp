@@ -649,3 +649,25 @@ export type DistanceLeg = {
     polyline?: string;
   } | null;
 };
+
+/** Marker icons Wanderlog's section picker offers (list from wcrusher@10c4068). */
+export const VALID_PLACE_MARKER_ICONS = [
+  "map-marker",
+  "map-pin",
+  "map-marker-alt",
+  "bed",
+  "camera",
+  "car",
+  "coffee",
+  "ice-cream",
+  "mountain",
+  "plane",
+  "ship",
+  "shopping-bag",
+  "subway",
+  "bus",
+  "ferry",
+  "utensils",
+  "wine-glass",
+  "check",
+] as const;

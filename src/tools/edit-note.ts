@@ -19,6 +19,13 @@ export const editNoteInputSchema = {
     .describe(
       "Optional day to search. Accepts 'day 2', 'May 4', or ISO '2026-05-04'. Omit to search the entire trip.",
     ),
+  note_id: z
+    .number()
+    .int()
+    .optional()
+    .describe(
+      "Optional exact block id (shown as [id …] by wanderlog_get_trip with response_format 'detailed') to restrict the search to one note, place annotation or checklist.",
+    ),
 };
 
 export const editNoteDescription = `
@@ -38,6 +45,7 @@ type Args = {
   old_text: string;
   new_text: string;
   day?: string;
+  note_id?: number;
 };
 
 type RichTextTarget = {
@@ -231,7 +239,12 @@ export async function editNote(
   try {
     const result = await submitOp(ctx, args.trip_key, async (entry, submit) => {
       const trip = entry.snapshot;
-      const targets = findEditTargets(trip, args.old_text, args.day);
+      const targets = findEditTargets(trip, args.old_text, args.day).filter(
+        (t) =>
+          args.note_id === undefined ||
+          (t.blockIndex >= 0 &&
+            trip.itinerary.sections[t.sectionIndex]!.blocks[t.blockIndex]!.id === args.note_id),
+      );
       if (targets.length === 0) {
         throw new WanderlogNotFoundError("Note", args.old_text);
       }
