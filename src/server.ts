@@ -108,6 +108,43 @@ import {
   addCarRentalDescription,
   addCarRentalInputSchema,
 } from "./tools/add-car-rental.js";
+import { addFlight, addFlightDescription, addFlightInputSchema } from "./tools/add-flight.js";
+import { deleteTrip, deleteTripDescription, deleteTripInputSchema } from "./tools/delete-trip.js";
+import {
+  getPlaceDetails,
+  getPlaceDetailsDescription,
+  getPlaceDetailsInputSchema,
+} from "./tools/get-place-details.js";
+import { updateTrip, updateTripDescription, updateTripInputSchema } from "./tools/update-trip.js";
+import {
+  editChecklist,
+  editChecklistDescription,
+  editChecklistInputSchema,
+} from "./tools/edit-checklist.js";
+import {
+  editReservation,
+  editReservationDescription,
+  editReservationInputSchema,
+} from "./tools/edit-reservation.js";
+import { explore, exploreDescription, exploreInputSchema } from "./tools/explore.js";
+import {
+  getTravelTimes,
+  getTravelTimesDescription,
+  getTravelTimesInputSchema,
+} from "./tools/get-travel-times.js";
+import {
+  budgetSummary,
+  budgetSummaryDescription,
+  budgetSummaryInputSchema,
+  setBudget,
+  setBudgetDescription,
+  setBudgetInputSchema,
+} from "./tools/budget.js";
+import {
+  addRestaurantReservation,
+  addRestaurantReservationDescription,
+  addRestaurantReservationInputSchema,
+} from "./tools/add-restaurant-reservation.js";
 
 type ToolResponse = {
   content: { type: "text"; text: string }[];
@@ -245,8 +282,32 @@ of places. A complete itinerary uses these building blocks:
      to list curated user-written guides for the destination, then get_guide with the chosen
      guide_key to read the full content. Use this for OTHER people's published guides; for
      your own trips use wanderlog_get_trip.
-  8. wanderlog_add_transit — ferry / bus / train legs between places (carrier, from/to, dates,
-     times). wanderlog_add_car_rental — a rental car with pick-up and drop-off locations/times.
+  8. wanderlog_add_flight — flight bookings (airline, flight number, depart/arrive airports,
+     dates, times). wanderlog_add_transit — ferry / bus / train legs between places (carrier,
+     from/to, dates, times). wanderlog_add_car_rental — a rental car with pick-up and drop-off
+     locations/times.
+  9. wanderlog_move_place moves an existing place between a list and day without losing
+     metadata; wanderlog_reorder_places changes its position within one container.
+     wanderlog_reorder_sections changes the relative order of custom lists. Never guess when
+     a place or section reference is ambiguous — refine the reference first.
+  10. Editing what's already there: wanderlog_edit_checklist ticks/unticks/adds/removes
+     checklist items; wanderlog_edit_reservation changes confirmation numbers, travelers,
+     dates/times, carrier, or notes on flights, transit, rental cars, and hotel stays;
+     wanderlog_update_trip renames a trip or changes its privacy. Prefer these over
+     remove-and-re-add so the user's existing data is preserved.
+  11. wanderlog_get_place_details answers "is it open on Monday?", phone/website, and rating
+     questions for any place. wanderlog_delete_trip is irreversible — only call it after the
+     user explicitly confirms, and pass the exact trip title.
+  12. IDEAS: when the user asks what to do/eat/see, call wanderlog_explore first (category:
+     "attractions", "restaurants", "cafes", "temples", … or near: "the hotel") — it returns
+     Wanderlog's curated, ranked lists with ratings and visit durations. Fall back to
+     wanderlog_search_places for free-text lookups.
+  13. ROUTING: wanderlog_get_travel_times gives drive/transit/walk legs between the places in
+     a day, in current order. Use it to spot over-packed days and then reorder/move places.
+  14. SHARED COSTS: pass paid_by and split_with to wanderlog_add_expense; wanderlog_budget_summary reports who owes whom, and
+     wanderlog_set_budget sets the target.
+  15. Restaurant bookings the user already holds go in wanderlog_add_restaurant_reservation
+     (date, time, party size, confirmation). It records — it does not book.
 
 Example add_place call with all features:
   wanderlog_add_place(trip_key, place: "Sensō-ji", day: "day 1",
@@ -540,6 +601,178 @@ export function buildServer(ctx: AppContext): McpServer {
   );
 
   server.registerTool(
+    "wanderlog_update_trip",
+    {
+      title: "Rename a trip or change its privacy",
+      description: updateTripDescription,
+      inputSchema: updateTripInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) => updateTrip(ctx, args as Parameters<typeof updateTrip>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_delete_trip",
+    {
+      title: "Permanently delete a Wanderlog trip",
+      description: deleteTripDescription,
+      inputSchema: deleteTripInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) => deleteTrip(ctx, args as Parameters<typeof deleteTrip>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_get_place_details",
+    {
+      title: "Look up details for a place (hours, rating, contact)",
+      description: getPlaceDetailsDescription,
+      inputSchema: getPlaceDetailsInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      getPlaceDetails(ctx, args as Parameters<typeof getPlaceDetails>[1]),
+    ),
+  );
+
+  server.registerTool(
+    "wanderlog_edit_checklist",
+    {
+      title: "Tick, add, remove, or rename checklist items",
+      description: editChecklistDescription,
+      inputSchema: editChecklistInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      editChecklist(ctx, args as Parameters<typeof editChecklist>[1]),
+    ),
+  );
+
+  server.registerTool(
+    "wanderlog_edit_reservation",
+    {
+      title: "Edit a flight, transit, rental car, or hotel reservation",
+      description: editReservationDescription,
+      inputSchema: editReservationInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      editReservation(ctx, args as Parameters<typeof editReservation>[1]),
+    ),
+  );
+
+  server.registerTool(
+    "wanderlog_explore",
+    {
+      title: "Recommended attractions, restaurants, and categories for a destination",
+      description: exploreDescription,
+      inputSchema: exploreInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    requireAuth(ctx, async (args) => explore(ctx, args as Parameters<typeof explore>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_get_travel_times",
+    {
+      title: "Travel time and distance between consecutive places in a day",
+      description: getTravelTimesDescription,
+      inputSchema: getTravelTimesInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      getTravelTimes(ctx, args as Parameters<typeof getTravelTimes>[1]),
+    ),
+  );
+
+  server.registerTool(
+    "wanderlog_set_budget",
+    {
+      title: "Set the trip budget target and group-expense settings",
+      description: setBudgetDescription,
+      inputSchema: setBudgetInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) => setBudget(ctx, args as Parameters<typeof setBudget>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_budget_summary",
+    {
+      title: "Spend vs. budget, by category/day/person, and balances",
+      description: budgetSummaryDescription,
+      inputSchema: budgetSummaryInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      budgetSummary(ctx, args as Parameters<typeof budgetSummary>[1]),
+    ),
+  );
+
+  server.registerTool(
+    "wanderlog_add_restaurant_reservation",
+    {
+      title: "Record a restaurant reservation",
+      description: addRestaurantReservationDescription,
+      inputSchema: addRestaurantReservationInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      addRestaurantReservation(ctx, args as Parameters<typeof addRestaurantReservation>[1]),
+    ),
+  );
+
+  server.registerTool(
     "wanderlog_list_journal",
     {
       title: "List journal stops in a Wanderlog trip",
@@ -669,6 +902,16 @@ export function buildServer(ctx: AppContext): McpServer {
     requireAuth(ctx, async (args) =>
       reorderSections(ctx, args as Parameters<typeof reorderSections>[1]),
     ),
+  );
+
+  server.registerTool(
+    "wanderlog_add_flight",
+    {
+      title: "Add a flight booking",
+      description: addFlightDescription,
+      inputSchema: addFlightInputSchema,
+    },
+    requireAuth(ctx, async (args) => addFlight(ctx, args as Parameters<typeof addFlight>[1])),
   );
 
   return server;
