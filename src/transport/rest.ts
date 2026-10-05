@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import type { Config } from "../config.js";
+import { createLogger } from "../logging.js";
 import {
   WanderlogAuthError,
   WanderlogError,
@@ -21,6 +23,8 @@ import type {
   User,
   UserSummary,
 } from "../types.js";
+
+const logger = createLogger("rest");
 
 type Envelope<T> = { success?: boolean } & T;
 
@@ -68,6 +72,11 @@ export class RestClient {
         const retryAfter = (err as { retryAfterMs?: number }).retryAfterMs;
         if (retryAfter === undefined || attempt >= RATE_LIMIT_RETRY_DELAYS_MS.length) throw err;
         const backoff = RATE_LIMIT_RETRY_DELAYS_MS[attempt]!;
+        logger.warn("HTTP 429, retrying", {
+          method,
+          path: path.split("?")[0],
+          attempt: attempt + 1,
+        });
         await new Promise((r) =>
           setTimeout(r, Math.min(Math.max(retryAfter, backoff), RETRY_AFTER_CAP_MS)),
         );
@@ -82,12 +91,17 @@ export class RestClient {
   ): Promise<T> {
     const url = `${this.config.baseUrl}${path}`;
     const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
+    // A multipart body sets its own Content-Type (with the boundary).
+    const isForm = opts.body instanceof FormData;
     const init: Parameters<typeof fetch>[1] = {
       method,
-      headers: this.headers(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      headers: this.headers(
+        opts.body !== undefined && !isForm ? { "Content-Type": "application/json" } : {},
+      ),
       signal: AbortSignal.timeout(timeoutMs),
     };
-    if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
+    if (opts.body !== undefined)
+      init.body = isForm ? (opts.body as FormData) : JSON.stringify(opts.body);
 
     let response: Response;
     try {
@@ -95,6 +109,7 @@ export class RestClient {
     } catch (err) {
       const name = (err as Error).name;
       if (name === "TimeoutError" || name === "AbortError") {
+        logger.warn("request timed out", { method, path: path.split("?")[0], timeoutMs });
         throw new WanderlogNetworkError(
           `Request to ${method} ${path} timed out after ${timeoutMs / 1000}s`,
         );
@@ -543,6 +558,66 @@ export class RestClient {
     const env = await this.request<Envelope<{ data?: UserSummary[] }>>(
       "GET",
       `/api/user/autocomplete/${encodeURIComponent(query)}`,
+    );
+    return env.data ?? [];
+  }
+
+  /**
+   * Upload a file to the trip's attachment store (the UI's "Attach file";
+   * endpoint captured by pharkrum@ec393e3). Returns the storage key that a
+   * block's `attachments` entry references.
+   */
+  async uploadAttachment(
+    tripKey: string,
+    file: { fileName: string; contentType: string; bytes: Uint8Array },
+  ): Promise<{ key: string; mimeType: string }> {
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob([new Uint8Array(file.bytes)], { type: file.contentType }),
+      file.fileName,
+    );
+    const env = await this.request<Envelope<{ data?: { key?: string; mimeType?: string } }>>(
+      "POST",
+      `/api/tripPlans/${encodeURIComponent(tripKey)}/attachment`,
+      { body: form, timeoutMs: 120_000 },
+    );
+    if (!env.data?.key) throw new WanderlogError("Upload returned no file key", "upload_no_key");
+    return { key: env.data.key, mimeType: env.data.mimeType ?? file.contentType };
+  }
+
+  /**
+   * Upload journal photos (the UI's "Add photo"; captured by
+   * pharkrum@7c38043). Returns one storage key per file, in order.
+   */
+  async uploadMedia(
+    tripKey: string,
+    files: Array<{ fileName: string; contentType: string; bytes: Uint8Array }>,
+  ): Promise<Array<{ type: string; key: string }>> {
+    if (files.length === 0) return [];
+    const form = new FormData();
+    files.forEach((f, i) =>
+      form.append(
+        `media${i}`,
+        new Blob([new Uint8Array(f.bytes)], { type: f.contentType }),
+        f.fileName,
+      ),
+    );
+    form.append(
+      "data",
+      JSON.stringify({
+        deviceId: randomUUID(),
+        mediaMetadata: files.map((f) => ({
+          localURL: `blob:wanderlog-mcp/${randomUUID()}`,
+          mimeType: f.contentType,
+          type: f.contentType.startsWith("image/") ? "image" : "file",
+        })),
+      }),
+    );
+    const env = await this.request<Envelope<{ data?: Array<{ type: string; key: string }> }>>(
+      "POST",
+      `/api/tripPlans/${encodeURIComponent(tripKey)}/media`,
+      { body: form, timeoutMs: 120_000 },
     );
     return env.data ?? [];
   }

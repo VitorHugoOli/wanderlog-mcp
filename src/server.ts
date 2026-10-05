@@ -16,6 +16,20 @@ import {
 import { addHotel, addHotelDescription, addHotelInputSchema } from "./tools/add-hotel.js";
 import { addNote, addNoteDescription, addNoteInputSchema } from "./tools/add-note.js";
 import { addPlace, addPlaceDescription, addPlaceInputSchema } from "./tools/add-place.js";
+import { undo, undoDescription, undoInputSchema } from "./tools/undo.js";
+import { attachFile, attachFileDescription, attachFileInputSchema } from "./tools/attach-file.js";
+import {
+  listAttachments,
+  listAttachmentsDescription,
+  listAttachmentsInputSchema,
+} from "./tools/list-attachments.js";
+import { addPlaces, addPlacesDescription, addPlacesInputSchema } from "./tools/add-places.js";
+import { copyPlace, copyPlaceDescription, copyPlaceInputSchema } from "./tools/copy-place.js";
+import {
+  removeDuplicatePlaces,
+  removeDuplicatePlacesDescription,
+  removeDuplicatePlacesInputSchema,
+} from "./tools/remove-duplicate-places.js";
 import { createTrip, createTripDescription, createTripInputSchema } from "./tools/create-trip.js";
 import { getTrip, getTripDescription, getTripInputSchema } from "./tools/get-trip.js";
 import { getTripUrl, getTripUrlDescription, getTripUrlInputSchema } from "./tools/get-trip-url.js";
@@ -912,6 +926,82 @@ export function buildServer(ctx: AppContext): McpServer {
       inputSchema: addFlightInputSchema,
     },
     requireAuth(ctx, async (args) => addFlight(ctx, args as Parameters<typeof addFlight>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_add_places",
+    {
+      title: "Add several places to a day or list at once",
+      description: addPlacesDescription,
+      inputSchema: addPlacesInputSchema,
+    },
+    requireAuth(ctx, async (args) => addPlaces(ctx, args as Parameters<typeof addPlaces>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_copy_place",
+    {
+      title: "Copy a place to another day or list",
+      description: copyPlaceDescription,
+      inputSchema: copyPlaceInputSchema,
+    },
+    requireAuth(ctx, async (args) => copyPlace(ctx, args as Parameters<typeof copyPlace>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_remove_duplicate_places",
+    {
+      title: "Find and remove duplicated places",
+      description: removeDuplicatePlacesDescription,
+      inputSchema: removeDuplicatePlacesInputSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      removeDuplicatePlaces(ctx, args as Parameters<typeof removeDuplicatePlaces>[1]),
+    ),
+  );
+
+  server.registerTool(
+    "wanderlog_attach_file",
+    {
+      title: "Attach a document or photo to a place",
+      description: attachFileDescription,
+      inputSchema: attachFileInputSchema,
+    },
+    requireAuth(ctx, async (args) => attachFile(ctx, args as Parameters<typeof attachFile>[1])),
+  );
+
+  server.registerTool(
+    "wanderlog_list_attachments",
+    {
+      title: "List files attached in a trip",
+      description: listAttachmentsDescription,
+      inputSchema: listAttachmentsInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    requireAuth(ctx, async (args) =>
+      listAttachments(ctx, args as Parameters<typeof listAttachments>[1]),
+    ),
+  );
+
+  server.registerTool(
+    "wanderlog_undo",
+    {
+      title: "Undo this session's last change to a trip",
+      description: undoDescription,
+      inputSchema: undoInputSchema,
+    },
+    requireAuth(ctx, async (args) => undo(ctx, args as Parameters<typeof undo>[1])),
   );
 
   return server;

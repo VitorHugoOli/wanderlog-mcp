@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uploadJournalPhotos } from "./journal-media.js";
 import { placeAmbiguityError, resolvePlaceQuery } from "./place-resolution.js";
 import type { AppContext } from "../context.js";
 import { WanderlogError } from "../errors.js";
@@ -36,6 +37,11 @@ export const addJournalInputSchema = {
     .describe(
       "Set true to journal a place that isn't in your itinerary — it's searched and added as a new (unplanned) place. Leave unset to be prompted instead.",
     ),
+  photo_paths: z
+    .array(z.string().min(1))
+    .max(10)
+    .optional()
+    .describe("Optional absolute paths of photos (png/jpg/heic…) to attach to the stop."),
 };
 
 export const addJournalDescription = `
@@ -56,6 +62,7 @@ type Args = {
   date?: string;
   time?: string;
   allow_new_place?: boolean;
+  photo_paths?: string[];
 };
 
 /**
@@ -113,6 +120,7 @@ export async function addJournal(
       searchedPlace = outcome.detail;
     }
 
+    const photos = await uploadJournalPhotos(ctx, args.trip_key, args.photo_paths ?? []);
     const result = await submitOp(ctx, args.trip_key, async (lockedEntry, submit) => {
       const trip = lockedEntry.snapshot;
       const existing = findTripPlaces(trip, args.place);
@@ -164,7 +172,7 @@ export async function addJournal(
         title: args.title ?? place.name,
         dateTime: `${date}T${time}${existingStopOffset(stops)}`,
         place,
-        media: [],
+        media: photos,
       };
       if (args.text) stop.text = { ops: [{ insert: args.text }] };
       const ops: Json0Op[] = [
@@ -185,7 +193,7 @@ export async function addJournal(
       content: [
         {
           type: "text",
-          text: `Added journal stop "${titleLabel}" (${result.date}) at ${result.place.name} in "${result.tripTitle}"${suffix}.`,
+          text: `Added journal stop "${titleLabel}" (${result.date}) at ${result.place.name} in "${result.tripTitle}"${suffix}${photos.length > 0 ? ` with ${photos.length} photo(s)` : ""}.`,
         },
       ],
     };

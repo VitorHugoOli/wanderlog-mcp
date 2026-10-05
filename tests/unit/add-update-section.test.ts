@@ -4,7 +4,7 @@ import { applyOp, type Json0Op } from "../../src/ot/apply.ts";
 import { buildSectionObject, findSectionByRef } from "../../src/tools/shared.ts";
 import { addSection } from "../../src/tools/add-section.ts";
 import { deleteSection } from "../../src/tools/delete-section.ts";
-import { updateSection } from "../../src/tools/update-section.ts";
+import { updateSection, updateSectionInputSchema } from "../../src/tools/update-section.ts";
 import type { Section, TripPlan } from "../../src/types.ts";
 import { checklistTrip } from "../fixtures/checklist-trip.ts";
 
@@ -342,5 +342,39 @@ describe("custom section lifecycle safety", () => {
     });
     expect(dayResult.isError).toBe(true);
     expect(day.submittedOps).toHaveLength(0);
+  });
+});
+
+describe("updateSection marker color and icon (fork)", () => {
+  it("sets color and icon, using od only for keys that exist", async () => {
+    const trip = fresh(checklistTrip);
+    trip.itinerary.sections.push({
+      id: 4242,
+      type: "normal",
+      mode: "placeList",
+      heading: "Food",
+      date: null,
+      blocks: [],
+      placeMarkerColor: "#3498db",
+    } as never);
+    const { ctx, submittedOps } = makeFakeContext(trip);
+    const res = await updateSection(ctx, {
+      trip_key: "T",
+      section: "Food",
+      place_marker_color: "#e74c3c",
+      place_marker_icon: "utensils",
+    });
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0]!.text).toContain("marker color #e74c3c, marker icon utensils");
+    const [color, icon] = submittedOps[0]!;
+    expect(color).toMatchObject({ od: "#3498db", oi: "#e74c3c" });
+    expect(icon).toEqual({ p: expect.any(Array), oi: "utensils" });
+  });
+
+  it("requires at least one change and validates the color", async () => {
+    const { ctx } = makeFakeContext(fresh(checklistTrip));
+    const none = await updateSection(ctx, { trip_key: "T", section: "Notes" });
+    expect(none.isError).toBe(true);
+    expect(updateSectionInputSchema.place_marker_color.safeParse("red").success).toBe(false);
   });
 });

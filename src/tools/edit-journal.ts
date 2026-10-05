@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { uploadJournalPhotos, type JournalMedia } from "./journal-media.js";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogNotFoundError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
@@ -43,6 +44,11 @@ export const editJournalInputSchema = {
     .describe(
       "New trip-level journal summary text (the overview shown above the stops). Edits the journal as a whole, not a stop — does not require a title.",
     ),
+  add_photo_paths: z
+    .array(z.string().min(1))
+    .max(10)
+    .optional()
+    .describe("Absolute paths of photos to add to the stop."),
 };
 
 export const editJournalDescription = `
@@ -64,6 +70,7 @@ type Args = {
   new_date?: string;
   new_time?: string;
   new_summary?: string;
+  add_photo_paths?: string[];
 };
 
 /** od+oi replacement for an existing key; oi-only insert when the key is absent. */
@@ -86,10 +93,17 @@ function buildStopOps(
   stop: JournalStop,
   index: number,
   args: Args,
+  photos: JournalMedia[] = [],
 ): { ops: Json0Op[]; changes: string[] } {
   const base = ["itinerary", "journal", "stops", index];
   const ops: Json0Op[] = [];
   const changes: string[] = [];
+
+  if (photos.length > 0) {
+    const current = (stop as { media?: unknown[] }).media;
+    ops.push(replaceField([...base, "media"], current, [...(current ?? []), ...photos]));
+    changes.push(`${photos.length} photo(s) added`);
+  }
 
   if (args.new_title !== undefined && args.new_title !== stop.title) {
     ops.push(replaceField([...base, "title"], stop.title, args.new_title));
@@ -124,15 +138,18 @@ export async function editJournal(
       args.new_title !== undefined ||
       args.new_text !== undefined ||
       args.new_date !== undefined ||
-      args.new_time !== undefined;
+      args.new_time !== undefined ||
+      (args.add_photo_paths?.length ?? 0) > 0;
     const hasSummaryEdit = args.new_summary !== undefined;
 
     if (!hasStopEdit && !hasSummaryEdit) {
       throw new WanderlogValidationError(
-        "Nothing to edit — supply at least one of new_title, new_text, new_date, new_time, or new_summary.",
+        "Nothing to edit — supply at least one of new_title, new_text, new_date, new_time, add_photo_paths, or new_summary.",
       );
     }
 
+    // Upload first: a failed upload must not leave a half-edited stop.
+    const photos = await uploadJournalPhotos(ctx, args.trip_key, args.add_photo_paths ?? []);
     const result = await submitOp(ctx, args.trip_key, async (entry, submit) => {
       const trip = entry.snapshot;
       const ops: Json0Op[] = [];
@@ -164,7 +181,7 @@ export async function editJournal(
         }
         const { index, stop } = matches[0]!;
         stopLabel = formatStop(stop);
-        const built = buildStopOps(stop, index, args);
+        const built = buildStopOps(stop, index, args, photos);
         ops.push(...built.ops);
         changes.push(...built.changes);
       }

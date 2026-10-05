@@ -3,7 +3,10 @@ import WebSocket from "ws";
 import type { Config } from "../config.js";
 import { WanderlogAuthError, WanderlogError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
+import { createLogger } from "../logging.js";
 import type { TripPlan } from "../types.js";
+
+const logger = createLogger("ws");
 
 export type { Json0Op };
 
@@ -183,6 +186,7 @@ export class ShareDBClient extends EventEmitter {
         clearTimeout(handshakeTimeout);
         if (isStale()) return;
         this.stopHeartbeat();
+        logger.info("socket closed", { trip: this.tripKey, code, wasSubscribed: this.subscribed });
         this.handshakeComplete = false;
         this.subscribed = false;
         this.failAllPending(new WanderlogError("WebSocket closed", "ws_closed"));
@@ -276,6 +280,7 @@ export class ShareDBClient extends EventEmitter {
       this.handshakeComplete = true;
       clearTimeout(handshakeTimeout);
       this.startHeartbeat();
+      logger.debug("handshake complete", { trip: this.tripKey });
       const hs = frame as HandshakeAckFrame;
       if (!this.sessionId && hs.id) this.sessionId = hs.id;
       connectResolve();
@@ -364,7 +369,10 @@ export class ShareDBClient extends EventEmitter {
     if (this.pongTimer) clearTimeout(this.pongTimer);
     this.pongTimer = setTimeout(() => {
       this.pongTimer = undefined;
-      if (this.ws === ws) ws.terminate();
+      if (this.ws === ws) {
+        logger.warn("no pong, terminating socket", { trip: this.tripKey, timeoutMs });
+        ws.terminate();
+      }
     }, timeoutMs);
     this.pongTimer.unref();
     try {
@@ -401,6 +409,7 @@ export class ShareDBClient extends EventEmitter {
     });
     this.ping(timeoutMs);
     const alive = await answered;
+    logger.debug("idle liveness check", { trip: this.tripKey, alive });
     if (!alive && this.ws === ws) ws.terminate();
     return alive && this.ws === ws && this.subscribed;
   }
@@ -467,6 +476,7 @@ export class ShareDBClient extends EventEmitter {
     this.snapshot = ack.data.data;
     this._version = ack.data.v;
     this.subscribed = true;
+    logger.debug("subscribed", { trip: this.tripKey, version: ack.data.v });
     return this.snapshot;
   }
 
@@ -509,6 +519,7 @@ export class ShareDBClient extends EventEmitter {
           reject(new WanderlogError("Submit op timeout", "submit_timeout"));
           // A missing ack almost always means a dead connection; close it so
           // the next call resubscribes instead of timing out the same way.
+          logger.warn("submit not acked, terminating socket", { trip: this.tripKey, seq });
           this.ws?.terminate();
         }
       }, 10_000);

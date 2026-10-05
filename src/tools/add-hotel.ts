@@ -10,6 +10,7 @@ import {
   findTripCenter,
   requireUserId,
   submitOp,
+  validateTimeInputs,
 } from "./shared.js";
 
 export const addHotelInputSchema = {
@@ -28,6 +29,21 @@ export const addHotelInputSchema = {
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "must be YYYY-MM-DD")
     .describe("Check-out date, YYYY-MM-DD. Must be after check_in."),
+  confirmation_number: z
+    .string()
+    .optional()
+    .describe("Optional booking confirmation / reference number."),
+  traveler_names: z.array(z.string()).optional().describe("Optional guest names for this booking."),
+  check_in_time: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "must be HH:mm")
+    .optional()
+    .describe("Optional check-in time, HH:mm (e.g. '15:00')."),
+  check_out_time: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/, "must be HH:mm")
+    .optional()
+    .describe("Optional check-out time, HH:mm (e.g. '11:00')."),
 };
 
 export const addHotelDescription = `
@@ -42,6 +58,10 @@ type Args = {
   hotel: string;
   check_in: string;
   check_out: string;
+  confirmation_number?: string;
+  traveler_names?: string[];
+  check_in_time?: string;
+  check_out_time?: string;
 };
 
 export async function addHotel(
@@ -55,6 +75,9 @@ export async function addHotel(
       );
     }
 
+    // Separately: check-out (11:00) is normally earlier in the day than check-in (15:00).
+    validateTimeInputs(args.check_in_time);
+    validateTimeInputs(args.check_out_time);
     const userId = requireUserId(ctx);
     const entry = await ctx.tripCache.getEntry(args.trip_key);
     const center = findTripCenter(entry.snapshot, entry.geos);
@@ -91,8 +114,8 @@ export async function addHotel(
         hotel: {
           checkIn: args.check_in,
           checkOut: args.check_out,
-          travelerNames: [],
-          confirmationNumber: null,
+          travelerNames: args.traveler_names ?? [],
+          confirmationNumber: args.confirmation_number ?? null,
         },
       });
       const existing = findHotelsSection(trip);
@@ -121,13 +144,17 @@ export async function addHotel(
       if (imageKeys.length > 0) {
         ops.push({ p: [...blockPath, "imageKeys"], oi: imageKeys });
       }
+      // Times as plain oi after the insert, in the same submit (the UI's shape;
+      // fields from shadowalkerz1@8740ac4).
+      if (args.check_in_time) ops.push({ p: [...blockPath, "startTime"], oi: args.check_in_time });
+      if (args.check_out_time) ops.push({ p: [...blockPath, "endTime"], oi: args.check_out_time });
       await submit(ops);
       return trip.title;
     });
 
     const where = detail.formatted_address ? ` (${detail.formatted_address})` : "";
     const text = [
-      `Added ${detail.name}${where} to "${tripTitle}" · check-in ${args.check_in} → check-out ${args.check_out}.`,
+      `Added ${detail.name}${where} to "${tripTitle}" · check-in ${args.check_in}${args.check_in_time ? ` ${args.check_in_time}` : ""} → check-out ${args.check_out}${args.check_out_time ? ` ${args.check_out_time}` : ""}.`,
       ...resolutionNotes,
     ].join(" ");
     return { content: [{ type: "text", text }] };

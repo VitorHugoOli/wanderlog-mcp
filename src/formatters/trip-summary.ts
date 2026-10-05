@@ -102,8 +102,12 @@ function renderBlockLines(section: Section, format: ResponseFormat, indent: stri
       .filter((line): line is string => Boolean(line))
       .map((line) => `${indent}• ${line}`);
   }
+  // Detailed output appends each block's id so a later call can target one
+  // exact block (note_id). Concise output keeps ids out of the model's way.
+  const idSuffix = (b: Block) => (format === "detailed" && b.id != null ? ` [id ${b.id}]` : "");
   return blocks.map(
-    (b, i) => `${indent}${i + 1}. ${formatBlockLine(b, format) ?? emptyBlockLabel(b)}`,
+    (b, i) =>
+      `${indent}${i + 1}. ${formatBlockLine(b, format) ?? emptyBlockLabel(b)}${idSuffix(b)}`,
   );
 }
 

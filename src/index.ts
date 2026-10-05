@@ -2,10 +2,12 @@
 import type { AppContext } from "./context.ts";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createContext } from "./context.js";
-import { redactSecrets, WanderlogAuthError, WanderlogError } from "./errors.js";
+import { WanderlogAuthError, WanderlogError } from "./errors.js";
+import { createLogger, pruneOldLogs } from "./logging.js";
 import { buildServer, ensureAuthenticated } from "./server.js";
 
-const log = (line: string) => process.stderr.write(`[wanderdog] ${redactSecrets(line)}\n`);
+const logger = createLogger("server");
+const log = (line: string) => logger.info(line);
 const describe = (err: unknown) =>
   err instanceof WanderlogError ? err.toUserMessage() : ((err as Error)?.stack ?? String(err));
 
@@ -14,6 +16,7 @@ const SHUTDOWN_GRACE_MS = 2_000;
 const PARENT_CHECK_MS = 30_000;
 
 async function main() {
+  pruneOldLogs();
   let ctx: AppContext;
   try {
     ctx = createContext();
@@ -58,10 +61,10 @@ async function main() {
   }, PARENT_CHECK_MS).unref();
 
   process.on("unhandledRejection", (reason) => {
-    log(`unhandled rejection (continuing): ${describe(reason)}`);
+    logger.error(`unhandled rejection (continuing): ${describe(reason)}`);
   });
   process.on("uncaughtException", (err) => {
-    log(`uncaught exception: ${describe(err)}`);
+    logger.error(`uncaught exception: ${describe(err)}`);
     shutdown("fatal error", 1);
   });
 

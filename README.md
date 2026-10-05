@@ -29,6 +29,10 @@ Personal fork ([VitorHugoOli/wanderlog-mcp](https://github.com/VitorHugoOli/wand
 - The process exits when its client closes stdin or disappears; REST calls time out (20s, 60s for hotel search); the MCP handshake no longer waits for the auth probe; a rejected cookie is cached for 30s only and network failures are never reported as a bad cookie; anything shaped like the session cookie is stripped from tool output and logs.
 - `add_place` / `add_note` write the block and all its fields in one submit, skip an identical repeat (`allow_duplicate` to override), and a write that failed after leaving tells the agent it may already be saved.
 
+### Logs
+
+Every server writes JSON lines to `$TMPDIR/wanderlog-mcp/wanderlog-mcp-YYYY-MM-DD.log` (one record per event, with `pid` and `scope`: `server`, `ws`, `cache`, `submit`, `rest`) and the same text to stderr; files older than 7 days are pruned at startup. `WANDERLOG_LOG_LEVEL=debug|info|warn|error` (default `info`), `WANDERLOG_LOG_DIR` to move them, `WANDERLOG_LOG_FILE=0` to disable the file. Cookie-shaped values are redacted.
+
 ### Protocol notes learned the hard way
 
 - Wanderlog drops an `hs` that arrives before its `init` frame.

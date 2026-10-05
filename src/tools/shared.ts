@@ -2,6 +2,7 @@ import type { AppContext } from "../context.js";
 import type { CacheEntry } from "../cache/trip-cache.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
+import { invertOps } from "../ot/invert.js";
 import type { SubmitResult } from "../transport/sharedb.js";
 import { resolveDay } from "../resolvers/day.js";
 import type {
@@ -17,7 +18,10 @@ import type {
   TransitEndpoint,
   TripPlan,
 } from "../types.js";
+import { createLogger } from "../logging.js";
 import { isPlaceBlock } from "../types.js";
+
+const logger = createLogger("submit");
 import { placeAmbiguityError, resolvePlaceQuery } from "./place-resolution.js";
 
 /**
@@ -57,13 +61,21 @@ export async function submitOp<T>(
   ctx: AppContext,
   tripKey: string,
   mutate: (entry: CacheEntry, submit: (ops: Json0Op[]) => Promise<void>) => Promise<T> | T,
+  options: { recordUndo?: boolean } = {},
 ): Promise<T> {
   return withSubmitLock(tripKey, async () => {
     const entry = await ctx.tripCache.getEntry(tripKey);
+    // Undo bookkeeping: the inverse of every accepted batch, newest first. A
+    // batch the server transformed has an unknown inverse, which voids it.
+    const inverses: Json0Op[][] = [];
+    const accepted: Json0Op[][] = [];
+    let undoable = options.recordUndo !== false;
     const submit = async (ops: Json0Op[]): Promise<void> => {
       // Read per batch: a refresh after a transformed op swaps the entry's client.
       const client = entry.client ?? ctx.pool.get(tripKey);
       const baseVersion = entry.version;
+      const inverse = undoable ? invertOps(entry.snapshot, ops) : null;
+      if (!inverse) undoable = false;
       let result: SubmitResult | void;
       try {
         if (!client.isSubscribed) {
@@ -74,6 +86,11 @@ export async function submitOp<T>(
         if (!isConfirmedNonApplication(err)) {
           ctx.tripCache.invalidate(tripKey);
         }
+        logger.warn("submit failed", {
+          trip: tripKey,
+          code: err instanceof WanderlogError ? err.code : "unknown",
+          ambiguous: err instanceof WanderlogError && AMBIGUOUS_CODES.has(err.code),
+        });
         throw withAmbiguityHint(err);
       }
 
@@ -87,7 +104,17 @@ export async function submitOp<T>(
           resync = true;
         }
       }
+      if (resync) undoable = false;
+      else if (inverse) {
+        inverses.unshift(inverse);
+        accepted.push(ops);
+      }
       if (resync) {
+        logger.info("resyncing after accepted submit", {
+          trip: tripKey,
+          sentVersion: result ? result.sentVersion : undefined,
+          ackVersion: result ? result.ackVersion : undefined,
+        });
         // Either the server transformed our ops against concurrent edits (so
         // they are not what it applied) or our local copy could not follow.
         try {
@@ -98,8 +125,60 @@ export async function submitOp<T>(
       }
     };
 
-    return mutate(entry, submit);
+    try {
+      return await mutate(entry, submit);
+    } finally {
+      // Recorded even if the mutation failed part-way: what did land can be undone.
+      // A change we cannot invert makes older entries unsafe too: drop them.
+      if (undoable && inverses.length > 0) {
+        recordUndo(tripKey, {
+          batches: inverses,
+          versionAfter: entry.version,
+          summary: summarizeOps(accepted.flat()),
+        });
+      } else if (!undoable && options.recordUndo !== false) {
+        clearUndo(tripKey);
+      }
+    }
   });
+}
+
+export type UndoEntry = { batches: Json0Op[][]; versionAfter: number; summary: string };
+const UNDO_DEPTH = 20;
+const undoStacks = new Map<string, UndoEntry[]>();
+
+function recordUndo(tripKey: string, entry: UndoEntry): void {
+  const stack = undoStacks.get(tripKey) ?? [];
+  stack.push(entry);
+  if (stack.length > UNDO_DEPTH) stack.shift();
+  undoStacks.set(tripKey, stack);
+}
+
+export function undoStack(tripKey: string): UndoEntry[] {
+  let stack = undoStacks.get(tripKey);
+  if (!stack) undoStacks.set(tripKey, (stack = []));
+  return stack;
+}
+
+export function clearUndo(tripKey: string): void {
+  undoStacks.delete(tripKey);
+}
+
+function summarizeOps(ops: Json0Op[]): string {
+  const counts = new Map<string, number>();
+  const bump = (k: string) => counts.set(k, (counts.get(k) ?? 0) + 1);
+  for (const op of ops) {
+    const field = op.p[op.p.length - 1];
+    if (op.lm !== undefined) bump("moved an item");
+    else if (op.li !== undefined && op.ld !== undefined) bump("replaced an item");
+    else if (op.li !== undefined)
+      bump(op.p.includes("expenses") ? "added an expense" : "added an item");
+    else if (op.ld !== undefined)
+      bump(op.p.includes("expenses") ? "removed an expense" : "removed an item");
+    else if (op.t === "rich-text") bump("edited text");
+    else if (typeof field === "string") bump(`changed ${field}`);
+  }
+  return [...counts].map(([k, n]) => (n > 1 ? `${k} ×${n}` : k)).join(", ") || "edit";
 }
 
 const CONFIRMED_NON_APPLICATION_CODES = new Set([
@@ -146,6 +225,7 @@ async function submitWithRateLimitRetry(
       if (!isRateLimit || attempt >= RATE_LIMIT_RETRY_DELAYS_MS.length) {
         throw err;
       }
+      logger.warn("ShareDB rate limited, retrying", { attempt: attempt + 1 });
       await new Promise((r) => setTimeout(r, RATE_LIMIT_RETRY_DELAYS_MS[attempt]));
       attempt += 1;
     }

@@ -144,3 +144,56 @@ describe("Phase 3 review regressions", () => {
     expect(outcome).toMatchObject({ kind: "resolved", detail: { place_id: "nrt" } });
   });
 });
+
+describe("add_hotel booking fields", () => {
+  it("stores confirmation, guests and times in the same submit", async () => {
+    const { addHotel } = await import("../../src/tools/add-hotel.ts");
+    const { applyOp } = await import("../../src/ot/apply.ts");
+    const { checklistTrip } = await import("../fixtures/checklist-trip.ts");
+    const submitted: unknown[][] = [];
+    const entry = { snapshot: structuredClone(checklistTrip), version: 1, geos: [] };
+    const ctx = {
+      userId: 1,
+      rest: {
+        searchPlacesAutocomplete: async () => [suggestion("h", "Hotel Avenida", "Lisbon")],
+        getPlaceDetails: async () => ({ place_id: "h", name: "Hotel Avenida" }),
+        getPlacePhotos: async () => [],
+      },
+      pool: {
+        get: () => ({
+          isSubscribed: true,
+          version: 1,
+          submit: async (ops: unknown[]) => void submitted.push(ops),
+        }),
+      },
+      tripCache: {
+        getEntry: async () => entry,
+        applyLocalOp: (_k: string, ops: never, v: number) => {
+          entry.snapshot = applyOp(entry.snapshot, ops);
+          entry.version = v;
+        },
+        invalidate: () => {},
+      },
+    } as unknown as AppContext;
+
+    const result = await addHotel(ctx, {
+      trip_key: "T",
+      hotel: "Hotel Avenida",
+      check_in: "2026-06-01",
+      check_out: "2026-06-03",
+      confirmation_number: "ABC123",
+      traveler_names: ["Vitor"],
+      check_in_time: "15:00",
+      check_out_time: "11:00",
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(submitted).toHaveLength(1);
+    const hotels = entry.snapshot.itinerary.sections.find((s) => s.type === "hotels")!;
+    expect(hotels.blocks[0]).toMatchObject({
+      startTime: "15:00",
+      endTime: "11:00",
+      hotel: { confirmationNumber: "ABC123", travelerNames: ["Vitor"] },
+    });
+  });
+});

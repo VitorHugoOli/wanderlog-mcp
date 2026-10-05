@@ -1,5 +1,8 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -10,6 +13,7 @@ import { afterEach, beforeAll, describe, expect, it } from "vitest";
  */
 const FAKE_COOKIE = "s%3AFakeSessionIdFakeSessionId0123.FakeSignatureFakeSignature0123456";
 
+const logDir = mkdtempSync(join(tmpdir(), "wl-proc-log-"));
 let blackhole: Server;
 let blackholeUrl: string;
 const children: ChildProcess[] = [];
@@ -33,6 +37,8 @@ function startServer(): { child: ChildProcess; stderr: () => string } {
       WANDERLOG_COOKIE: FAKE_COOKIE,
       WANDERLOG_BASE_URL: blackholeUrl,
       WANDERLOG_WS_BASE_URL: blackholeUrl.replace("http", "ws"),
+      WANDERLOG_LOG_DIR: logDir,
+      WANDERLOG_LOG_FILE: "1",
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
@@ -78,5 +84,12 @@ describe("server process lifecycle", () => {
     child.stdin!.end();
     await exit;
     expect(stderr()).not.toContain("FakeSessionId");
+    const files = readdirSync(logDir);
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      const content = readFileSync(join(logDir, file), "utf8");
+      expect(content).toContain('"scope":"server"');
+      expect(content).not.toContain("FakeSessionId");
+    }
   });
 });
