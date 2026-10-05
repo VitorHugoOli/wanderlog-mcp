@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
@@ -59,7 +60,7 @@ export async function searchPlaces(
 
     const predictions = await ctx.rest.searchPlacesAutocomplete({
       input: args.query,
-      sessionToken: crypto.randomUUID(),
+      sessionToken: randomUUID(),
       location: { latitude: center.lat, longitude: center.lng },
       radius: 15000,
     });
@@ -91,7 +92,7 @@ function formatPredictions(predictions: PlaceSuggestion[], format: "concise" | "
   if (format === "concise") {
     return top
       .map((p, i) => {
-        const main = p.structured_formatting?.main_text ?? p.description;
+        const main = p.structured_formatting?.main_text ?? p.description ?? "(unnamed place)";
         const sub = p.structured_formatting?.secondary_text ?? "";
         return `${i + 1}. ${main}${sub ? ` — ${sub}` : ""}`;
       })
@@ -99,7 +100,7 @@ function formatPredictions(predictions: PlaceSuggestion[], format: "concise" | "
   }
   return top
     .map((p, i) => {
-      const main = p.structured_formatting?.main_text ?? p.description;
+      const main = p.structured_formatting?.main_text ?? p.description ?? "(unnamed place)";
       const sub = p.structured_formatting?.secondary_text ?? "";
       return `${i + 1}. ${main}${sub ? ` — ${sub}` : ""}\n   place_id: ${p.place_id}`;
     })

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { AppContext } from "../context.js";
 import type { CacheEntry } from "../cache/trip-cache.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
@@ -83,9 +84,15 @@ export async function submitOp<T>(
 
       try {
         ctx.tripCache.applyLocalOp(tripKey, ops, client.version);
-      } catch (err) {
-        ctx.tripCache.invalidate(tripKey);
-        throw err;
+      } catch {
+        // The server already accepted the ops; only our local copy failed to
+        // follow. Reporting an error here would make the agent redo a write
+        // that landed, so resync the cache and carry on.
+        try {
+          await ctx.tripCache.refresh(tripKey);
+        } catch {
+          ctx.tripCache.invalidate(tripKey);
+        }
       }
     };
 
@@ -602,7 +609,7 @@ export async function resolveEndpointPlace(
   }
   const predictions = await ctx.rest.searchPlacesAutocomplete({
     input: query,
-    sessionToken: crypto.randomUUID(),
+    sessionToken: randomUUID(),
     location: { latitude: center.lat, longitude: center.lng },
     radius: 15000,
   });
