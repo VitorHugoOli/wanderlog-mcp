@@ -2,13 +2,8 @@ import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
-import {
-  buildNoteBlock,
-  findBlockById,
-  findBlockTargetSection,
-  requireUserId,
-  submitOp,
-} from "./shared.js";
+import { ALLOW_DUPLICATE_HINT, findDuplicateNote } from "./duplicate-guard.js";
+import { buildNoteBlock, findBlockTargetSection, requireUserId, submitOp } from "./shared.js";
 
 export const addNoteInputSchema = z.object({
   trip_key: z
@@ -30,6 +25,12 @@ export const addNoteInputSchema = z.object({
     .describe(
       "Optional undated section to add the note to, identified by its heading (e.g. 'Notes', 'Food & Drink', or 'Places to visit'). Matching is case-insensitive and takes precedence over 'day'. Omit both to add to the 'Places to visit' list.",
     ),
+  allow_duplicate: z
+    .boolean()
+    .optional()
+    .describe(
+      "Set true to add the note even if a note with identical text is already in that day/section. Default false: an identical repeat is reported as already there.",
+    ),
 });
 
 export const addNoteDescription = `
@@ -46,6 +47,9 @@ When to add a note (do this after adding each place or group of places):
 - Time guidance: "Budget 2-3 hours here. Open 10am-6pm, closed Tuesdays"
 - Neighborhood context: "This area is great for wandering — no rush, just explore the lanes"
 
+A note whose text is identical to one already in that day/section is not added again (so a retry
+after an unclear error never duplicates it); pass allow_duplicate: true if it is intended.
+
 Returns a confirmation of where the note was added.
 `.trim();
 
@@ -60,39 +64,29 @@ export async function addNote(
     const result = await submitOp(ctx, args.trip_key, async (entry, submit) => {
       const trip = entry.snapshot;
       const target = findBlockTargetSection(trip, args, "note");
-      const block = buildNoteBlock(userId);
-      const insertOps: Json0Op[] = [
-        {
-          p: ["itinerary", "sections", target.index, "blocks", target.section.blocks.length],
-          li: block,
-        },
-      ];
-      await submit(insertOps);
-
-      const inserted = findBlockById(entry.snapshot, block.id as number);
-      if (!inserted || inserted.block.type !== "note") {
-        throw new WanderlogError("Inserted note could not be found", "stale_target");
+      if (!args.allow_duplicate && findDuplicateNote(target.section, args.text)) {
+        return { added: false, targetLabel: target.label, tripTitle: trip.title };
       }
-      const textOps: Json0Op[] = [
-        {
-          p: [
-            "itinerary",
-            "sections",
-            inserted.sectionIndex,
-            "blocks",
-            inserted.blockIndex,
-            "text",
-          ],
-          t: "rich-text",
-          o: [{ insert: `${args.text}\n` }],
-        },
+      // Insert and text in one submit, so the note can never land empty.
+      const blockPath = [
+        "itinerary",
+        "sections",
+        target.index,
+        "blocks",
+        target.section.blocks.length,
       ];
-      await submit(textOps);
-      return { targetLabel: target.label, tripTitle: entry.snapshot.title };
+      const ops: Json0Op[] = [
+        { p: blockPath, li: buildNoteBlock(userId) },
+        { p: [...blockPath, "text"], t: "rich-text", o: [{ insert: `${args.text}\n` }] },
+      ];
+      await submit(ops);
+      return { added: true, targetLabel: target.label, tripTitle: trip.title };
     });
 
     const preview = args.text.length > 60 ? `${args.text.slice(0, 57)}…` : args.text;
-    const text = `Added note "${preview}" to ${result.targetLabel} in "${result.tripTitle}".`;
+    const text = result.added
+      ? `Added note "${preview}" to ${result.targetLabel} in "${result.tripTitle}".`
+      : `A note "${preview}" is already in ${result.targetLabel} in "${result.tripTitle}" — nothing added. ${ALLOW_DUPLICATE_HINT}`;
     return { content: [{ type: "text", text }] };
   } catch (err) {
     const msg =

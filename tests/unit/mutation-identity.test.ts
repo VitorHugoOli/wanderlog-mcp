@@ -94,7 +94,7 @@ describe("concurrent mutation identity", () => {
     expect(blocks[1]!.text?.ops[0]!.insert).toBe("untouched\n");
   });
 
-  it("re-finds a newly inserted place before a follow-up rich-text batch", async () => {
+  it("submits a new place together with its note in one batch", async () => {
     const trip = {
       title: "Multi-batch trip",
       itinerary: {
@@ -163,8 +163,10 @@ describe("concurrent mutation identity", () => {
     });
 
     expect(result.isError).toBeUndefined();
-    expect(submitted).toHaveLength(2);
-    expect(submitted[1]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 1, "text"]);
+    // The note rides in the same batch as the insert, so a concurrent shift
+    // after it lands can no longer separate the two.
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]![1]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0, "text"]);
     const blocks = entry.snapshot.itinerary.sections[0]!.blocks;
     expect(blocks[0]!.id).toBe(404);
     expect(blocks[0]!.text?.ops[0]!.insert).toBe("shift\n");

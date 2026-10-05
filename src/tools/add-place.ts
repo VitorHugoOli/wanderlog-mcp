@@ -4,9 +4,9 @@ import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
 import { resolveDay } from "../resolvers/day.js";
 import type { PlaceData } from "../types.js";
+import { ALLOW_DUPLICATE_HINT, findDuplicatePlace } from "./duplicate-guard.js";
 import {
   buildPlaceBlock,
-  findBlockById,
   findDaySectionByDate,
   findPlacesToVisitSection,
   findSectionByRef,
@@ -65,6 +65,12 @@ export const addPlaceInputSchema = {
     .regex(/^\d{2}:\d{2}$/, "must be HH:mm")
     .optional()
     .describe("Optional end time in HH:mm format (e.g. '11:30'). Only used with start_time."),
+  allow_duplicate: z
+    .boolean()
+    .optional()
+    .describe(
+      "Set true to add the place even if the same place is already in that day/list at the same start time (e.g. the hotel at both the start and end of a day). Default false: an identical repeat is reported as already there.",
+    ),
 };
 
 export const addPlaceDescription = `
@@ -85,6 +91,11 @@ wanderlog_add_note call because the note lives on the place itself in the itiner
 Use standalone wanderlog_add_note only for freestanding commentary between places (neighborhood
 context, multi-stop transit, day-level tips that aren't about a specific place).
 
+Adding the same place to the same day/list at the same start time again is a no-op that reports
+it is already there — so retrying after an unclear error never duplicates it. A different start
+time is a real second visit and is added; pass allow_duplicate: true for an intended repeat with
+the same time.
+
 Returns a confirmation including the resolved place name and where it was added.
 `.trim();
 
@@ -97,6 +108,7 @@ type Args = {
   note?: string;
   start_time?: string;
   end_time?: string;
+  allow_duplicate?: boolean;
 };
 
 export async function addPlace(
@@ -180,6 +192,8 @@ export async function addPlace(
         targets.push({ sectionId: places.section.id, label: "places to visit" });
       }
 
+      const added: string[] = [];
+      const alreadyThere: string[] = [];
       for (const target of targets) {
         const sectionIndex = lockedEntry.snapshot.itinerary.sections.findIndex(
           (section) => section.id === target.sectionId,
@@ -188,64 +202,46 @@ export async function addPlace(
           throw new WanderlogError("Target section moved or was removed", "stale_target");
         }
         const section = lockedEntry.snapshot.itinerary.sections[sectionIndex]!;
+        if (!args.allow_duplicate && findDuplicatePlace(section, detail, args.start_time)) {
+          alreadyThere.push(target.label);
+          continue;
+        }
+
+        // One submit carrying the insert and every field set on it: ShareDB
+        // applies an op array as a single version, so the place can never land
+        // without its note or times (which would invite a duplicating retry).
         const block = buildPlaceBlock(detail, userId);
         const blockPath = ["itinerary", "sections", sectionIndex, "blocks", section.blocks.length];
-        const insertOps: Json0Op[] = [{ p: blockPath, li: block }];
-        if (imageKeys.length > 0) {
-          insertOps.push({ p: [...blockPath, "imageKeys"], oi: imageKeys });
-        }
-        await submit(insertOps);
-
+        const ops: Json0Op[] = [{ p: blockPath, li: block }];
+        if (imageKeys.length > 0) ops.push({ p: [...blockPath, "imageKeys"], oi: imageKeys });
         if (args.note) {
-          const inserted = findBlockById(lockedEntry.snapshot, block.id);
-          if (!inserted || inserted.block.type !== "place") {
-            throw new WanderlogError("Inserted place could not be found", "stale_target");
-          }
-          await submit([
-            {
-              p: [
-                "itinerary",
-                "sections",
-                inserted.sectionIndex,
-                "blocks",
-                inserted.blockIndex,
-                "text",
-              ],
-              t: "rich-text",
-              o: [{ insert: `${args.note}\n` }],
-            },
-          ]);
+          ops.push({
+            p: [...blockPath, "text"],
+            t: "rich-text",
+            o: [{ insert: `${args.note}\n` }],
+          });
         }
-
-        if (args.start_time || args.end_time) {
-          const inserted = findBlockById(lockedEntry.snapshot, block.id);
-          if (!inserted || inserted.block.type !== "place") {
-            throw new WanderlogError("Inserted place could not be found", "stale_target");
-          }
-          const currentPath = [
-            "itinerary",
-            "sections",
-            inserted.sectionIndex,
-            "blocks",
-            inserted.blockIndex,
-          ];
-          const timeOps: Json0Op[] = [];
-          if (args.start_time) {
-            timeOps.push({ p: [...currentPath, "startTime"], oi: args.start_time });
-          }
-          if (args.end_time) {
-            timeOps.push({ p: [...currentPath, "endTime"], oi: args.end_time });
-          }
-          await submit(timeOps);
-        }
+        if (args.start_time) ops.push({ p: [...blockPath, "startTime"], oi: args.start_time });
+        if (args.end_time) ops.push({ p: [...blockPath, "endTime"], oi: args.end_time });
+        await submit(ops);
+        added.push(target.label);
       }
-      return {
-        labelList: targets.map((target) => target.label).join(" and "),
-        tripTitle: trip.title,
-      };
+      return { added, alreadyThere, tripTitle: trip.title };
     });
 
-    const parts = [`Added ${detail.name} to ${mutation.labelList} in "${mutation.tripTitle}".`];
+    if (mutation.added.length === 0) {
+      const text = `${detail.name} is already in ${mutation.alreadyThere.join(" and ")}${
+        args.start_time ? ` at ${args.start_time}` : ""
+      } in "${mutation.tripTitle}" — nothing added. ${ALLOW_DUPLICATE_HINT}`;
+      return { content: [{ type: "text", text }] };
+    }
+
+    const parts = [
+      `Added ${detail.name} to ${mutation.added.join(" and ")} in "${mutation.tripTitle}".`,
+    ];
+    if (mutation.alreadyThere.length > 0) {
+      parts.push(`Already in ${mutation.alreadyThere.join(" and ")} — not added there again.`);
+    }
     if (args.start_time) {
       parts.push(`Scheduled: ${args.start_time}${args.end_time ? `–${args.end_time}` : ""}.`);
     }

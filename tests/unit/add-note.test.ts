@@ -89,10 +89,11 @@ describe("addNote section targeting", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('section "Notes"');
-    expect(submittedOps).toHaveLength(2);
+    // Insert and text travel in one submit so the note can never land empty.
+    expect(submittedOps).toHaveLength(1);
     expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
     expect((submittedOps[0]![0] as { li: { type: string } }).li.type).toBe("note");
-    expect(submittedOps[1]![0]).toMatchObject({
+    expect(submittedOps[0]![1]).toMatchObject({
       p: ["itinerary", "sections", 0, "blocks", 0, "text"],
       t: "rich-text",
       o: [{ insert: "Keep passport copies here\n" }],
