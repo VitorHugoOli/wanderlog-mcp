@@ -111,3 +111,20 @@ describe("duplicate day repair (upstream issue #58)", () => {
     expect(daysOn("2026-06-05")).toHaveLength(1);
   });
 });
+
+describe("duplicate day repair with cloned blocks (Phase 3 review)", () => {
+  it("does not append blocks the survivor already has, and never leaves duplicate ids", async () => {
+    const trip = structuredClone(checklistTrip);
+    const original = trip.itinerary.sections[2]!;
+    const clone = structuredClone(original);
+    clone.blocks.push(note(4242) as never);
+    trip.itinerary.sections.push(clone);
+    const { ctx, daysOn } = makeFakeContext(trip);
+    await updateTripDates(ctx, { trip_key: "T", start_date: "2026-06-01", end_date: "2026-06-04" });
+    const [only] = daysOn("2026-06-01");
+    const ids = only!.blocks.map((b) => b.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids).toContain(4242);
+    expect(only!.blocks).toHaveLength(original.blocks.length + 1);
+  });
+});

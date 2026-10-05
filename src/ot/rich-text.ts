@@ -224,7 +224,8 @@ const LINE_PATTERNS: Array<{
   attributes: (match: RegExpExecArray) => DeltaAttributes;
 }> = [
   { pattern: /^(#{1,3})\s+(.*)$/, attributes: (m) => ({ header: m[1]!.length }) },
-  { pattern: /^>\s?(.*)$/, attributes: () => ({ blockquote: true }) },
+  // Require a space: ">30 min walk" or ">100 yen" are not quotes.
+  { pattern: /^>\s(.*)$/, attributes: () => ({ blockquote: true }) },
   { pattern: /^[-*+]\s+(.*)$/, attributes: () => ({ list: "bullet" }) },
   { pattern: /^\d+[.)]\s+(.*)$/, attributes: () => ({ list: "ordered" }) },
 ];

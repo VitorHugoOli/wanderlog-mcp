@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
+import { requireUserId } from "./shared.js";
 
 export const deleteTripInputSchema = {
   trip_key: z.string().min(1).describe("The trip to delete permanently."),
@@ -45,7 +46,7 @@ export async function deleteTrip(
     const trip = await ctx.rest.getTrip(args.trip_key);
     // A trip shared with the user belongs to someone else; deleting it would
     // destroy their plan, so only the owner's own trips can be deleted here.
-    if (ctx.userId !== undefined && trip.userId !== undefined && trip.userId !== ctx.userId) {
+    if (trip.userId !== undefined && trip.userId !== requireUserId(ctx)) {
       throw new WanderlogValidationError(
         `"${trip.title}" is owned by another Wanderlog user and was only shared with you — nothing was deleted.`,
       );

@@ -286,8 +286,8 @@ of places. A complete itinerary uses these building blocks:
      dates, times). wanderlog_add_transit — ferry / bus / train legs between places (carrier,
      from/to, dates, times). wanderlog_add_car_rental — a rental car with pick-up and drop-off
      locations/times.
-  9. wanderlog_move_place moves an existing place between a list and day without losing
-     metadata; wanderlog_reorder_places changes its position within one container.
+  9. wanderlog_move_block reorders a place within its day/list, or (with to_day/to_section)
+     moves it to another day or list without losing its note, times or photos.
      wanderlog_reorder_sections changes the relative order of custom lists. Never guess when
      a place or section reference is ambiguous — refine the reference first.
   10. Editing what's already there: wanderlog_edit_checklist ticks/unticks/adds/removes

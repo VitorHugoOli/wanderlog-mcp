@@ -30,7 +30,7 @@ Computes travel distance and time between consecutive places in a day, in the or
 currently arranged — the same numbers Wanderlog shows between itinerary items.
 
 Use it to sanity-check a day ("is day 2 too spread out?"), to answer "how long from X to Y?",
-or to decide a better order before calling wanderlog_reorder_places. Legs are returned per
+or to decide a better order before calling wanderlog_move_block. Legs are returned per
 day with a total; places without coordinates are skipped.
 `.trim();
 
@@ -172,7 +172,7 @@ export async function getTravelTimes(
     }
     out.push(
       "",
-      "Reorder with wanderlog_reorder_places or move places with wanderlog_move_place to shorten long days.",
+      "Reorder with wanderlog_move_block (position/before/after), or move a place to another day with its to_day option, to shorten long days.",
     );
     return { content: [{ type: "text", text: out.join("\n") }] };
   } catch (err) {
