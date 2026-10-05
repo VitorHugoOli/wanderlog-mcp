@@ -17,7 +17,10 @@ import type {
   TransitEndpoint,
   TripPlan,
 } from "../types.js";
+import { createLogger } from "../logging.js";
 import { isPlaceBlock } from "../types.js";
+
+const logger = createLogger("submit");
 import { placeAmbiguityError, resolvePlaceQuery } from "./place-resolution.js";
 
 /**
@@ -74,6 +77,11 @@ export async function submitOp<T>(
         if (!isConfirmedNonApplication(err)) {
           ctx.tripCache.invalidate(tripKey);
         }
+        logger.warn("submit failed", {
+          trip: tripKey,
+          code: err instanceof WanderlogError ? err.code : "unknown",
+          ambiguous: err instanceof WanderlogError && AMBIGUOUS_CODES.has(err.code),
+        });
         throw withAmbiguityHint(err);
       }
 
@@ -88,6 +96,11 @@ export async function submitOp<T>(
         }
       }
       if (resync) {
+        logger.info("resyncing after accepted submit", {
+          trip: tripKey,
+          sentVersion: result ? result.sentVersion : undefined,
+          ackVersion: result ? result.ackVersion : undefined,
+        });
         // Either the server transformed our ops against concurrent edits (so
         // they are not what it applied) or our local copy could not follow.
         try {
@@ -146,6 +159,7 @@ async function submitWithRateLimitRetry(
       if (!isRateLimit || attempt >= RATE_LIMIT_RETRY_DELAYS_MS.length) {
         throw err;
       }
+      logger.warn("ShareDB rate limited, retrying", { attempt: attempt + 1 });
       await new Promise((r) => setTimeout(r, RATE_LIMIT_RETRY_DELAYS_MS[attempt]));
       attempt += 1;
     }

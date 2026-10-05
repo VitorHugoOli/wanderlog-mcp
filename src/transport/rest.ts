@@ -1,4 +1,5 @@
 import type { Config } from "../config.js";
+import { createLogger } from "../logging.js";
 import {
   WanderlogAuthError,
   WanderlogError,
@@ -21,6 +22,8 @@ import type {
   User,
   UserSummary,
 } from "../types.js";
+
+const logger = createLogger("rest");
 
 type Envelope<T> = { success?: boolean } & T;
 
@@ -68,6 +71,11 @@ export class RestClient {
         const retryAfter = (err as { retryAfterMs?: number }).retryAfterMs;
         if (retryAfter === undefined || attempt >= RATE_LIMIT_RETRY_DELAYS_MS.length) throw err;
         const backoff = RATE_LIMIT_RETRY_DELAYS_MS[attempt]!;
+        logger.warn("HTTP 429, retrying", {
+          method,
+          path: path.split("?")[0],
+          attempt: attempt + 1,
+        });
         await new Promise((r) =>
           setTimeout(r, Math.min(Math.max(retryAfter, backoff), RETRY_AFTER_CAP_MS)),
         );
@@ -95,6 +103,7 @@ export class RestClient {
     } catch (err) {
       const name = (err as Error).name;
       if (name === "TimeoutError" || name === "AbortError") {
+        logger.warn("request timed out", { method, path: path.split("?")[0], timeoutMs });
         throw new WanderlogNetworkError(
           `Request to ${method} ${path} timed out after ${timeoutMs / 1000}s`,
         );

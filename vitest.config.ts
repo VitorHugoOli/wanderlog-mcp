@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     testTimeout: 15_000,
+    // Unit tests must not write log files; the logging test opts back in.
+    env: { WANDERLOG_LOG_FILE: "0" },
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html", "lcov"],

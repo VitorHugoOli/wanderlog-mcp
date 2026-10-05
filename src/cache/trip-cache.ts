@@ -2,7 +2,10 @@ import { applyOp, type Json0Op } from "../ot/apply.js";
 import { WanderlogError } from "../errors.js";
 import type { RestClient } from "../transport/rest.js";
 import type { ShareDBClient, ShareDBPool } from "../transport/sharedb.js";
+import { createLogger } from "../logging.js";
 import type { Geo, TripPlan } from "../types.js";
+
+const logger = createLogger("cache");
 
 export type CacheEntry = {
   snapshot: TripPlan;
@@ -59,6 +62,12 @@ export class TripCache {
       // A refresh may have re-filled the same entry object with a new client
       // meanwhile, so compare the client we judged, not just the object.
       if (this.entries.get(tripKey) === existing && existing.client === judgedClient) {
+        logger.info("cached trip is stale, resubscribing", {
+          trip: tripKey,
+          subscribed: existing.client.isSubscribed,
+          entryVersion: existing.version,
+          clientVersion: existing.client.version,
+        });
         this.deleteEntry(tripKey);
       }
     }
@@ -105,6 +114,7 @@ export class TripCache {
   async refresh(tripKey: string, entry?: CacheEntry): Promise<void> {
     const held = entry ?? this.entries.get(tripKey);
     if (!held) return;
+    logger.info("refetching trip snapshot", { trip: tripKey });
     if (this.entries.get(tripKey) === held) this.deleteEntry(tripKey);
 
     const fresh = await this.subscribeOnce(tripKey, held.geos);
@@ -137,9 +147,10 @@ export class TripCache {
           current.snapshot = applyOp(current.snapshot, ops);
           current.version = version;
         } catch (err) {
-          process.stderr.write(
-            `[wanderdog] dropping cached trip after an op it cannot apply: ${(err as Error).message}\n`,
-          );
+          logger.warn("dropping cached trip after a remote op it cannot apply", {
+            trip: tripKey,
+            error: (err as Error).message,
+          });
           this.deleteEntry(tripKey);
         }
       };
@@ -214,7 +225,10 @@ export class TripCache {
 
   evictIdle(now = Date.now()): void {
     for (const [tripKey, entry] of this.entries) {
-      if (now - (entry.lastUsedAt ?? now) > IDLE_EVICT_MS) this.deleteEntry(tripKey);
+      if (now - (entry.lastUsedAt ?? now) > IDLE_EVICT_MS) {
+        logger.info("closing idle trip", { trip: tripKey });
+        this.deleteEntry(tripKey);
+      }
     }
     if (this.entries.size === 0 && this.sweepTimer) {
       clearInterval(this.sweepTimer);
