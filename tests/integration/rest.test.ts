@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../../src/config.ts";
 import { RestClient } from "../../src/transport/rest.ts";
+import { testTripKey } from "./guard.ts";
 
-const TRIP_KEY = process.env.WANDERLOG_TRIP_KEY ?? "vzyrsyhgxvonvxcz";
+const TRIP_KEY = testTripKey();
 
 describe("RestClient (live)", () => {
   let client: RestClient;

@@ -1,8 +1,9 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { loadConfig } from "../../src/config.ts";
 import { ShareDBClient, ShareDBPool } from "../../src/transport/sharedb.ts";
+import { assertTestTrip, testTripKey } from "./guard.ts";
 
-const TRIP_KEY = process.env.WANDERLOG_TRIP_KEY ?? "vzyrsyhgxvonvxcz";
+const TRIP_KEY = testTripKey();
 
 describe("ShareDBClient (live)", () => {
   let client: ShareDBClient;
@@ -25,6 +26,19 @@ describe("ShareDBClient (live)", () => {
     expect(snapshot.title.length).toBeGreaterThan(0);
     expect(client.version).toBeGreaterThanOrEqual(1);
     expect(snapshot.itinerary.sections.length).toBeGreaterThan(0);
+    expect(client.isSubscribed).toBe(true);
+  });
+
+  it("is a test trip", async () => {
+    client = new ShareDBClient(loadConfig(), TRIP_KEY);
+    assertTestTrip(await client.subscribe());
+  });
+
+  it("answers WebSocket pings, so idle liveness checks succeed", async () => {
+    client = new ShareDBClient(loadConfig(), TRIP_KEY);
+    await client.subscribe();
+    (client as unknown as { lastSeenAt: number }).lastSeenAt = 0;
+    await expect(client.ensureAlive(45_000, 5_000)).resolves.toBe(true);
     expect(client.isSubscribed).toBe(true);
   });
 

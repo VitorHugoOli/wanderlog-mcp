@@ -13,6 +13,13 @@ vi.mock("ws", async () => {
 
     readyState = FakeWebSocket.CONNECTING;
     readonly sent: Array<Record<string, unknown>> = [];
+    pings = 0;
+    answerPings = true;
+
+    ping(): void {
+      this.pings += 1;
+      if (this.answerPings) queueMicrotask(() => this.emit("pong"));
+    }
 
     constructor() {
       super();
@@ -52,6 +59,8 @@ vi.mock("ws", async () => {
 });
 
 type FakeSocket = {
+  pings: number;
+  answerPings: boolean;
   readyState: number;
   sent: Array<Record<string, unknown>>;
   emit(event: string, ...args: unknown[]): boolean;
@@ -241,5 +250,64 @@ describe("ShareDBClient connection lifecycle", () => {
     socket.receive(SUBSCRIBE_ACK);
     await expect(Promise.all([a, b])).resolves.toEqual([{ title: "t" }, { title: "t" }]);
     client.close();
+  });
+
+  it("pings periodically and keeps a socket that answers", async () => {
+    const client = await subscribedClient();
+    const socket = latestSocket();
+    await vi.advanceTimersByTimeAsync(ShareDBClient.HEARTBEAT_INTERVAL_MS * 3);
+    expect(socket.pings).toBe(3);
+    expect(client.isSubscribed).toBe(true);
+    client.close();
+  });
+
+  it("terminates a socket that stops answering pings", async () => {
+    const client = await subscribedClient();
+    const socket = latestSocket();
+    const closed = vi.fn();
+    client.on("closed", closed);
+    socket.answerPings = false;
+
+    await vi.advanceTimersByTimeAsync(ShareDBClient.HEARTBEAT_INTERVAL_MS);
+    expect(client.isSubscribed).toBe(true);
+    await vi.advanceTimersByTimeAsync(ShareDBClient.PONG_TIMEOUT_MS);
+    expect(closed).toHaveBeenCalledOnce();
+    expect(client.isSubscribed).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    client.close();
+  });
+
+  it("closes the socket when a submit is never acked", async () => {
+    const client = await subscribedClient();
+    const submitted = client.submit([{ p: ["title"], oi: "x" }]);
+    const failed = expect(submitted).rejects.toMatchObject({ code: "submit_timeout" });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await failed;
+    expect(client.isSubscribed).toBe(false);
+    expect(latestSocket().readyState).toBe(3);
+  });
+
+  it("answers ensureAlive without a ping while traffic is recent", async () => {
+    const client = await subscribedClient();
+    await expect(client.ensureAlive()).resolves.toBe(true);
+    expect(latestSocket().pings).toBe(0);
+    client.close();
+  });
+
+  it("pings before trusting an idle socket and drops it if there is no pong", async () => {
+    const client = await subscribedClient();
+    const socket = latestSocket();
+    vi.setSystemTime(Date.now() + 60_000);
+
+    await expect(client.ensureAlive()).resolves.toBe(true);
+    expect(socket.pings).toBe(1);
+
+    vi.setSystemTime(Date.now() + 60_000);
+    socket.answerPings = false;
+    const alive = client.ensureAlive();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await expect(alive).resolves.toBe(false);
+    expect(socket.readyState).toBe(3);
+    expect(client.isSubscribed).toBe(false);
   });
 });

@@ -264,4 +264,19 @@ describe("TripCache subscription lifecycle", () => {
     expect(pool.has("tripA")).toBe(false);
     expect(pool.has("tripB")).toBe(false);
   });
+
+  it("closes trips that have been idle past the eviction window", async () => {
+    const { cache, pool } = makeCache();
+    await cache.get("tripA");
+    const client = pool.created.get("tripA")![0]!;
+
+    cache.evictIdle(Date.now() + 5 * 60_000);
+    expect(pool.has("tripA")).toBe(true);
+
+    cache.evictIdle(Date.now() + 31 * 60_000);
+    expect(client.closeCalled).toBe(1);
+    expect(pool.has("tripA")).toBe(false);
+    expect((await cache.get("tripA")).title).toBe("tripA snapshot 2");
+    cache.clear();
+  });
 });
