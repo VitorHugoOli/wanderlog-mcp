@@ -1,3 +1,17 @@
+const SECRET_PATTERNS = [
+  /connect\.sid=[^;\s"']+/gi,
+  /\bs(?:%3A|:)[A-Za-z0-9_-]{16,}\.[A-Za-z0-9%+/=_-]{16,}/g,
+];
+
+/**
+ * Strip anything shaped like the session cookie from text bound for the
+ * client or the logs. Nothing should put it there, but a transport error that
+ * echoes request headers must not be the one place it leaks.
+ */
+export function redactSecrets(text: string): string {
+  return SECRET_PATTERNS.reduce((out, re) => out.replace(re, "[redacted]"), text);
+}
+
 export type ErrorOptions = {
   hint?: string;
   followUps?: string[];

@@ -1,7 +1,7 @@
 {
   "name": "wanderlog-mcp",
   "version": "0.3.2",
-  "description": "MCP server for Wanderlog — let Claude build and edit your trip itineraries through conversation",
+  "description": "MCP server for Wanderlog \u2014 let Claude build and edit your trip itineraries through conversation",
   "type": "module",
   "bin": {
     "wanderlog-mcp": "dist/index.js"
@@ -43,7 +43,8 @@
     "start:http": "node --env-file=.env dist/http.js",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test:reliability": "npm run build && vitest run tests/reliability"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",

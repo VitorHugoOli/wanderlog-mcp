@@ -1,5 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AppContext } from "./context.js";
+import { redactSecrets, WanderlogAuthError, WanderlogError } from "./errors.js";
 import { VERSION } from "./version.js";
 import {
   addChecklist,
@@ -103,46 +104,110 @@ import {
   addCarRentalInputSchema,
 } from "./tools/add-car-rental.js";
 
-const AUTH_ERROR_RESPONSE = {
+type ToolResponse = {
+  content: { type: "text"; text: string }[];
+  isError?: boolean;
+};
+
+type ToolHandler = (args: Record<string, unknown>) => Promise<ToolResponse>;
+
+const AUTH_ERROR_RESPONSE: ToolResponse = {
   content: [
     {
-      type: "text" as const,
+      type: "text",
       text: "Authentication required. Update WANDERLOG_COOKIE with a valid connect.sid cookie from wanderlog.com and restart the server.",
     },
   ],
   isError: true,
 };
 
-type ToolHandler = (args: Record<string, unknown>) => Promise<{
-  content: { type: "text"; text: string }[];
-  isError?: boolean;
-}>;
+/**
+ * How long a rejected cookie is trusted before probing again. Caching the
+ * rejection stops an invalid cookie from being re-probed on every call;
+ * expiring it means a cookie fixed in place (or a server-side blip that looked
+ * like a 401) does not need a restart.
+ */
+export const AUTH_RETRY_AFTER_MS = 30_000;
 
-const lazyAuthAttempts = new WeakMap<AppContext, Promise<boolean>>();
+type AuthState = { inFlight?: Promise<void>; rejectedAt?: number };
+const authStates = new WeakMap<AppContext, AuthState>();
 
-async function ensureAuthenticated(ctx: AppContext): Promise<boolean> {
-  if (ctx.authenticated) return true;
+/**
+ * Resolves when the session is authenticated. Throws WanderlogAuthError for a
+ * rejected cookie and other WanderlogErrors (network, timeout, 5xx) for
+ * failures that say nothing about the cookie — those are never cached, so the
+ * next call simply tries again. Shared by the startup probe and every tool.
+ */
+export async function ensureAuthenticated(ctx: AppContext): Promise<void> {
+  if (ctx.authenticated) return;
+  let state = authStates.get(ctx);
+  if (!state) authStates.set(ctx, (state = {}));
 
-  let attempt = lazyAuthAttempts.get(ctx);
-  if (!attempt) {
-    attempt = ctx.rest
-      .getUser()
-      .then((user) => {
-        ctx.userId = user.id;
-        ctx.authenticated = true;
-        return true;
-      })
-      .catch(() => false);
-    lazyAuthAttempts.set(ctx, attempt);
+  if (state.rejectedAt !== undefined) {
+    if (Date.now() - state.rejectedAt < AUTH_RETRY_AFTER_MS) throw new WanderlogAuthError();
+    state.rejectedAt = undefined;
   }
 
-  return attempt;
+  state.inFlight ??= ctx.rest
+    .getUser()
+    .then((user) => {
+      ctx.userId = user.id;
+      ctx.authenticated = true;
+    })
+    .catch((err: unknown) => {
+      if (err instanceof WanderlogAuthError) state.rejectedAt = Date.now();
+      throw err;
+    })
+    .finally(() => {
+      state.inFlight = undefined;
+    });
+  return state.inFlight;
+}
+
+function errorResponse(err: unknown): ToolResponse {
+  const text =
+    err instanceof WanderlogError
+      ? err.toUserMessage()
+      : `Unexpected error in ${err instanceof Error ? err.name : "tool"}: ${
+          err instanceof Error ? err.message : String(err)
+        }`;
+  return { content: [{ type: "text", text }], isError: true };
+}
+
+function redactResponse(response: ToolResponse): ToolResponse {
+  return {
+    ...response,
+    content: response.content.map((c) => ({ ...c, text: redactSecrets(c.text) })),
+  };
 }
 
 export function requireAuth(ctx: AppContext, handler: ToolHandler) {
-  return async (args: Record<string, unknown>) => {
-    if (!(await ensureAuthenticated(ctx))) return AUTH_ERROR_RESPONSE;
-    return handler(args);
+  return async (args: Record<string, unknown>): Promise<ToolResponse> => {
+    try {
+      await ensureAuthenticated(ctx);
+    } catch (err) {
+      if (err instanceof WanderlogAuthError) return AUTH_ERROR_RESPONSE;
+      // Not a verdict on the cookie (network, timeout, Wanderlog 5xx): say so,
+      // instead of telling the user to replace a cookie that is fine.
+      const reason = err instanceof WanderlogError ? err.message : "unexpected error";
+      return redactResponse({
+        content: [
+          {
+            type: "text",
+            text: `Could not verify the Wanderlog session (${reason}). This is usually a network or Wanderlog outage, not a bad cookie — retry in a moment.`,
+          },
+        ],
+        isError: true,
+      });
+    }
+    try {
+      return redactResponse(await handler(args));
+    } catch (err) {
+      // Tools catch their own errors, so anything arriving here is a bug or a
+      // schema rejection. An unlabelled throw reaches the client as a bare
+      // "Tool execution failed", indistinguishable from a dead server.
+      return redactResponse(errorResponse(err));
+    }
   };
 }
 

@@ -19,6 +19,13 @@ import type {
 
 type Envelope<T> = { success?: boolean } & T;
 
+/**
+ * fetch has no deadline of its own (only the OS socket limits, minutes long),
+ * so a stalled request would hang the tool call — while holding the trip's
+ * submit lock if it happens inside a mutation.
+ */
+export const REQUEST_TIMEOUT_MS = 20_000;
+
 export class RestClient {
   constructor(private readonly config: Config) {}
 
@@ -37,12 +44,14 @@ export class RestClient {
   private async request<T>(
     method: string,
     path: string,
-    opts: { body?: unknown } = {},
+    opts: { body?: unknown; timeoutMs?: number } = {},
   ): Promise<T> {
     const url = `${this.config.baseUrl}${path}`;
+    const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
     const init: Parameters<typeof fetch>[1] = {
       method,
       headers: this.headers(opts.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      signal: AbortSignal.timeout(timeoutMs),
     };
     if (opts.body !== undefined) init.body = JSON.stringify(opts.body);
 
@@ -50,6 +59,12 @@ export class RestClient {
     try {
       response = await fetch(url, init);
     } catch (err) {
+      const name = (err as Error).name;
+      if (name === "TimeoutError" || name === "AbortError") {
+        throw new WanderlogNetworkError(
+          `Request to ${method} ${path} timed out after ${timeoutMs / 1000}s`,
+        );
+      }
       throw new WanderlogNetworkError(
         `Request to ${method} ${path} failed: ${(err as Error).message}`,
       );
@@ -329,7 +344,8 @@ export class RestClient {
     const env = await this.request<Envelope<{ data?: LodgingSearchResponse }>>(
       "POST",
       "/api/lodging/searchLodgings",
-      { body },
+      // Aggregates several vendors server-side; routinely slower than other calls.
+      { body, timeoutMs: 60_000 },
     );
     return env.data ?? { isComplete: true, offers: [] };
   }
