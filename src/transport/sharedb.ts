@@ -80,6 +80,13 @@ export class ShareDBClient extends EventEmitter {
   >();
   private connectPromise?: Promise<void>;
   private subscribePromise?: Promise<TripPlan>;
+  private heartbeatTimer?: NodeJS.Timeout;
+  private pongTimer?: NodeJS.Timeout;
+  private pongWaiters: Array<() => void> = [];
+  private lastSeenAt = 0;
+
+  static HEARTBEAT_INTERVAL_MS = 30_000;
+  static PONG_TIMEOUT_MS = 10_000;
 
   constructor(
     private readonly config: Config,
@@ -141,6 +148,7 @@ export class ShareDBClient extends EventEmitter {
 
       ws.on("message", (raw) => {
         if (isStale()) return;
+        this.markAlive();
         const text = raw.toString();
         let msg: unknown;
         try {
@@ -166,9 +174,15 @@ export class ShareDBClient extends EventEmitter {
         this.handleFrame(msg as Frame & { error?: unknown }, handshakeTimeout, resolve);
       });
 
+      ws.on("pong", () => {
+        if (isStale()) return;
+        this.markAlive();
+      });
+
       ws.on("close", (code: number) => {
         clearTimeout(handshakeTimeout);
         if (isStale()) return;
+        this.stopHeartbeat();
         this.handshakeComplete = false;
         this.subscribed = false;
         this.failAllPending(new WanderlogError("WebSocket closed", "ws_closed"));
@@ -201,6 +215,7 @@ export class ShareDBClient extends EventEmitter {
   private retireSocket(): void {
     const old = this.ws;
     if (!old) return;
+    this.stopHeartbeat();
     this.ws = undefined;
     old.removeAllListeners();
     // ws emits "error" when terminating a socket that is still connecting;
@@ -260,6 +275,7 @@ export class ShareDBClient extends EventEmitter {
     if (frame.a === "hs" && !this.handshakeComplete) {
       this.handshakeComplete = true;
       clearTimeout(handshakeTimeout);
+      this.startHeartbeat();
       const hs = frame as HandshakeAckFrame;
       if (!this.sessionId && hs.id) this.sessionId = hs.id;
       connectResolve();
@@ -321,6 +337,74 @@ export class ShareDBClient extends EventEmitter {
     }
   }
 
+  /**
+   * A connection dropped by sleep, a network change or a NAT dies without a
+   * close frame and keeps reporting OPEN, so reads serve a frozen snapshot and
+   * every submit times out. A periodic ping with a pong deadline turns that
+   * into a real close, which drops the cache entry and forces a resubscribe.
+   */
+  private startHeartbeat(): void {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      if (!this.pongTimer) this.ping(ShareDBClient.PONG_TIMEOUT_MS);
+    }, ShareDBClient.HEARTBEAT_INTERVAL_MS);
+    this.heartbeatTimer.unref();
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = undefined;
+    if (this.pongTimer) clearTimeout(this.pongTimer);
+    this.pongTimer = undefined;
+  }
+
+  private ping(timeoutMs: number): void {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (this.pongTimer) clearTimeout(this.pongTimer);
+    this.pongTimer = setTimeout(() => {
+      this.pongTimer = undefined;
+      if (this.ws === ws) ws.terminate();
+    }, timeoutMs);
+    this.pongTimer.unref();
+    try {
+      ws.ping();
+    } catch {
+      ws.terminate();
+    }
+  }
+
+  private markAlive(): void {
+    this.lastSeenAt = Date.now();
+    if (this.pongTimer) clearTimeout(this.pongTimer);
+    this.pongTimer = undefined;
+    const waiters = this.pongWaiters;
+    this.pongWaiters = [];
+    for (const wake of waiters) wake();
+  }
+
+  /**
+   * Cheap liveness check before trusting a subscription that has been quiet
+   * for a while (e.g. after the laptop slept). Pings and waits briefly; if
+   * the server does not answer, the socket is terminated and false returned.
+   */
+  async ensureAlive(idleMs = 45_000, timeoutMs = 3_000): Promise<boolean> {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !this.handshakeComplete) return false;
+    if (Date.now() - this.lastSeenAt < idleMs) return true;
+    const answered = new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      this.pongWaiters.push(() => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+    this.ping(timeoutMs);
+    const alive = await answered;
+    if (!alive && this.ws === ws) ws.terminate();
+    return alive && this.ws === ws && this.subscribed;
+  }
+
   private send(obj: unknown): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new WanderlogError("WebSocket is not open — cannot send frame", "ws_not_open");
@@ -343,7 +427,10 @@ export class ShareDBClient extends EventEmitter {
   private async doSubscribe(): Promise<TripPlan> {
     await this.connect();
 
-    if (this.subscribed && this.snapshot) return this.snapshot;
+    if (this.subscribed && this.snapshot && this.ws?.readyState === WebSocket.OPEN) {
+      return this.snapshot;
+    }
+    this.subscribed = false;
 
     const ack = await new Promise<SubscribeAckFrame>((resolve, reject) => {
       // A timer left running after the ack could later clear a newer
@@ -420,6 +507,9 @@ export class ShareDBClient extends EventEmitter {
         if (this.pendingOps.has(seq)) {
           this.pendingOps.delete(seq);
           reject(new WanderlogError("Submit op timeout", "submit_timeout"));
+          // A missing ack almost always means a dead connection; close it so
+          // the next call resubscribes instead of timing out the same way.
+          this.ws?.terminate();
         }
       }, 10_000);
       this.pendingOps.set(seq, {
@@ -441,6 +531,7 @@ export class ShareDBClient extends EventEmitter {
   }
 
   close(): void {
+    this.stopHeartbeat();
     this.subscribed = false;
     this.failAllPending(new WanderlogError("Client closed", "ws_closed"));
     this.ws?.close();
