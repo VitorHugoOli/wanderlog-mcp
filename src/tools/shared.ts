@@ -215,7 +215,12 @@ export function resolveSectionRef(trip: TripPlan, ref: string): SectionRefResult
       candidates.push({ index: i, section });
     }
   }
-  if (candidates.length === 0) return { kind: "none" };
+  if (candidates.length === 0) {
+    // "notes" should reach the notes area even when it is localized ("Notas").
+    // Only as a fallback, so duplicate headings are still reported as ambiguous.
+    const notes = NOTES_ALIASES.has(normalized) ? findNotesSection(trip) : null;
+    return notes ? { kind: "unique", match: notes } : { kind: "none" };
+  }
   if (candidates.length === 1) return { kind: "unique", match: candidates[0]! };
   return { kind: "ambiguous", candidates };
 }
@@ -323,6 +328,27 @@ export function buildPlaceBlock(
  * Finds the "Places to visit" section (the default normal+placeList section
  * at the top of every trip). Returns its index in trip.itinerary.sections.
  */
+const NOTES_ALIASES = new Set(["notes", "note", "notas", "nota"]);
+
+/**
+ * The trip-level notes area: a textOnly section whose content is free rich
+ * text in section.text (it holds no blocks). Its heading is localized
+ * ("Notes", "Notas", …), so it is found by type, preferring a notes-like or
+ * empty heading.
+ */
+export function findNotesSection(trip: TripPlan): { index: number; section: Section } | null {
+  const sections = trip.itinerary.sections;
+  let fallback: { index: number; section: Section } | null = null;
+  for (let i = 0; i < sections.length; i++) {
+    const section = sections[i]!;
+    if (section.type !== "textOnly") continue;
+    const heading = section.heading?.trim().toLowerCase() ?? "";
+    if (!heading || NOTES_ALIASES.has(heading)) return { index: i, section };
+    fallback ??= { index: i, section };
+  }
+  return fallback;
+}
+
 export function findPlacesToVisitSection(trip: TripPlan): {
   index: number;
   section: Section;
@@ -438,6 +464,12 @@ export function findBlockTargetSection(
     if (found.section.mode === "dayPlan") {
       throw new WanderlogValidationError(
         `Section "${found.section.heading || target.section}" is a dated section. Use the "day" parameter to add a ${blockLabel} to an itinerary day.`,
+      );
+    }
+    if (found.section.type === "textOnly" && blockLabel !== "note") {
+      throw new WanderlogValidationError(
+        `"${found.section.heading || "Notes"}" is the trip's free-text notes area and cannot hold a ${blockLabel}.`,
+        "Add it to a day or to a list such as 'Places to visit' instead.",
       );
     }
     return {
