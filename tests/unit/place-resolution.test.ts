@@ -142,6 +142,9 @@ describe("Phase 3 review regressions", () => {
     );
     const outcome = await resolvePlaceQuery(ctx, "Narita", CENTER);
     expect(outcome).toMatchObject({ kind: "resolved", detail: { place_id: "nrt" } });
+  });
+});
+
 describe("add_hotel booking fields", () => {
   it("stores confirmation, guests and times in the same submit", async () => {
     const { addHotel } = await import("../../src/tools/add-hotel.ts");
