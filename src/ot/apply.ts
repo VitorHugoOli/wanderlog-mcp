@@ -89,7 +89,16 @@ function applyRichTextOp(parent: JsonContainer, key: string | number, payload: u
   if (target && typeof target === "object" && "ops" in (target as Record<string, unknown>)) {
     const ops = (target as { ops: Array<{ insert?: string }> }).ops;
     if (Array.isArray(ops)) {
-      current = ops.map((op) => (typeof op.insert === "string" ? op.insert : "")).join("");
+      // Flattening drops embeds (images, mentions), which Quill counts as one
+      // character each, so every later offset into this text would be wrong.
+      // Refuse instead; callers resync the cache from the server.
+      if (ops.some((op) => typeof op.insert !== "string")) {
+        throw new WanderlogError(
+          "Cannot apply a rich-text edit locally to text that contains embeds",
+          "ot_rich_text_embed",
+        );
+      }
+      current = ops.map((op) => op.insert as string).join("");
     }
   }
 

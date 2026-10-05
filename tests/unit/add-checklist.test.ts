@@ -117,6 +117,17 @@ describe("addChecklistInputSchema", () => {
   });
 });
 
+// The fixture's first section is the textOnly Notes area; swap it for a
+// regular custom list so named-section targeting can be exercised.
+const prepTrip: TripPlan = {
+  ...structuredClone(checklistTrip),
+};
+prepTrip.itinerary.sections[0] = {
+  ...prepTrip.itinerary.sections[0]!,
+  type: "normal",
+  heading: "Trip Preparations",
+};
+
 describe("addChecklist section targeting", () => {
   const checklist = {
     trip_key: "T",
@@ -154,48 +165,48 @@ describe("addChecklist section targeting", () => {
   });
 
   it("succeeds for a case-insensitive named section", async () => {
-    const { result } = await runChecklist({ section: "notes" });
+    const { result } = await runChecklist({ section: "trip preparations" }, prepTrip);
 
     expect(result.isError).toBeUndefined();
   });
 
   it("reports the canonical named section", async () => {
-    const { result } = await runChecklist({ section: "notes" });
+    const { result } = await runChecklist({ section: "trip preparations" }, prepTrip);
 
     expect(result.isError).toBeUndefined();
-    expect(result.content[0]!.text).toContain('section "Notes"');
+    expect(result.content[0]!.text).toContain('section "Trip Preparations"');
   });
 
   it("submits one operation for a named section", async () => {
-    const { result, submittedOps } = await runChecklist({ section: "notes" });
+    const { result, submittedOps } = await runChecklist({ section: "trip preparations" }, prepTrip);
 
     expect(result.isError).toBeUndefined();
     expect(submittedOps).toHaveLength(1);
   });
 
   it("inserts into the named section", async () => {
-    const { result, submittedOps } = await runChecklist({ section: "notes" });
+    const { result, submittedOps } = await runChecklist({ section: "trip preparations" }, prepTrip);
 
     expect(result.isError).toBeUndefined();
     expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
   });
 
   it("inserts a checklist block into the named section", async () => {
-    const { result, submittedOps } = await runChecklist({ section: "notes" });
+    const { result, submittedOps } = await runChecklist({ section: "trip preparations" }, prepTrip);
 
     expect(result.isError).toBeUndefined();
     expect(submittedOps[0]![0]!.li).toMatchObject({ type: "checklist" });
   });
 
   it("preserves the checklist title in the named section", async () => {
-    const { result, submittedOps } = await runChecklist({ section: "notes" });
+    const { result, submittedOps } = await runChecklist({ section: "trip preparations" }, prepTrip);
 
     expect(result.isError).toBeUndefined();
     expect(submittedOps[0]![0]!.li).toMatchObject({ title: "Before departure" });
   });
 
   it("creates one block item per checklist input", async () => {
-    const { result, submittedOps } = await runChecklist({ section: "notes" });
+    const { result, submittedOps } = await runChecklist({ section: "trip preparations" }, prepTrip);
 
     expect(result.isError).toBeUndefined();
     expect(submittedOps[0]![0]!.li).toMatchObject({
@@ -204,23 +215,37 @@ describe("addChecklist section targeting", () => {
   });
 
   it("lets section override day in the response", async () => {
-    const { result } = await runChecklist({
-      day: "day 1",
-      section: "Notes",
-    });
+    const { result } = await runChecklist(
+      {
+        day: "day 1",
+        section: "Trip Preparations",
+      },
+      prepTrip,
+    );
 
     expect(result.isError).toBeUndefined();
-    expect(result.content[0]!.text).toContain('section "Notes"');
+    expect(result.content[0]!.text).toContain('section "Trip Preparations"');
   });
 
   it("lets section override day in the submitted path", async () => {
-    const { result, submittedOps } = await runChecklist({
-      day: "day 1",
-      section: "Notes",
-    });
+    const { result, submittedOps } = await runChecklist(
+      {
+        day: "day 1",
+        section: "Trip Preparations",
+      },
+      prepTrip,
+    );
 
     expect(result.isError).toBeUndefined();
     expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
+  });
+
+  it("refuses the trip's free-text Notes area, which cannot hold blocks", async () => {
+    const { result, submittedOps } = await runChecklist({ section: "notes" });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0]!.text).toContain("free-text notes area");
+    expect(submittedOps).toHaveLength(0);
   });
 
   it("returns an error for an unknown section", async () => {

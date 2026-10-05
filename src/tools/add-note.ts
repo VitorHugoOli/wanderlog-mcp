@@ -1,10 +1,18 @@
 import { z } from "zod";
 import type { AppContext } from "../context.js";
-import { WanderlogError } from "../errors.js";
+import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
+import type { TripPlan } from "../types.js";
 import { ALLOW_DUPLICATE_HINT, findDuplicateNote } from "./duplicate-guard.js";
+import { deltaOffsetText, findNoteParagraphs } from "./remove-note.js";
 import { hasInsertAnchor, insertAnchorSchema, resolveInsertionPoint } from "./insert-position.js";
-import { buildNoteBlock, findBlockTargetSection, requireUserId, submitOp } from "./shared.js";
+import {
+  buildNoteBlock,
+  findBlockTargetSection,
+  requireUserId,
+  submitOp,
+  type TargetSection,
+} from "./shared.js";
 
 export const addNoteInputSchema = z.object({
   trip_key: z
@@ -24,7 +32,7 @@ export const addNoteInputSchema = z.object({
     .min(1)
     .optional()
     .describe(
-      "Optional undated section to add the note to, identified by its heading (e.g. 'Notes', 'Food & Drink', or 'Places to visit'). Matching is case-insensitive and takes precedence over 'day'. Omit both to add to the 'Places to visit' list.",
+      "Optional undated section to add the note to, identified by its heading (e.g. 'Food & Drink', 'Places to visit', or 'Notes' / 'Notas' for the trip's free-text notes area, where the note becomes a new paragraph). Matching is case-insensitive and takes precedence over 'day'. Omit both to add to the 'Places to visit' list.",
     ),
   ...insertAnchorSchema,
   allow_duplicate: z
@@ -70,6 +78,9 @@ export async function addNote(
     const result = await submitOp(ctx, args.trip_key, async (entry, submit) => {
       const trip = entry.snapshot;
       const target = findBlockTargetSection(trip, args, "note");
+      if (target.section.type === "textOnly") {
+        return appendToNotesArea(trip, target, args, submit);
+      }
       if (!args.allow_duplicate && findDuplicateNote(target.section, args.text)) {
         return { added: false, targetLabel: target.label, placement: "", tripTitle: trip.title };
       }
@@ -101,4 +112,45 @@ export async function addNote(
         : `Unexpected error: ${(err as Error).message}`;
     return { content: [{ type: "text", text: msg }], isError: true };
   }
+}
+
+/**
+ * The trip-level notes area is free rich text (section.text), not a list of
+ * note blocks, so a note is appended there as a new paragraph.
+ */
+async function appendToNotesArea(
+  trip: TripPlan,
+  target: TargetSection,
+  args: Args,
+  submit: (ops: Json0Op[]) => Promise<void>,
+) {
+  const label = `section "${target.section.heading || "Notes"}"`;
+  if (hasInsertAnchor(args)) {
+    throw new WanderlogValidationError(
+      `${label} is free text, so position/before/after do not apply — the note is added as a new paragraph at the end.`,
+    );
+  }
+  const text = args.text.trim();
+  if (
+    !args.allow_duplicate &&
+    findNoteParagraphs(target.section.text, text).some((p) => p.text.trim() === text)
+  ) {
+    return { added: false, targetLabel: label, placement: "", tripTitle: trip.title };
+  }
+  const existing = deltaOffsetText(target.section.text);
+  const textPath = ["itinerary", "sections", target.index, "text"];
+  let ops: Json0Op[];
+  if (!target.section.text) {
+    ops = [{ p: textPath, oi: { ops: [{ insert: `${text}\n` }] } }];
+  } else {
+    // Insert before the document's final newline; start a new paragraph unless
+    // the area is empty.
+    const end = Math.max(0, existing.length - 1);
+    const insert = existing.trim() ? `\n${text}` : text;
+    ops = [
+      { p: textPath, t: "rich-text", o: end > 0 ? [{ retain: end }, { insert }] : [{ insert }] },
+    ];
+  }
+  await submit(ops);
+  return { added: true, targetLabel: label, placement: "", tripTitle: trip.title };
 }

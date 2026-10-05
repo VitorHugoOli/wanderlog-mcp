@@ -76,7 +76,10 @@ describe("addNote section targeting", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('section "Notes"');
-    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
+    expect(submittedOps[0]![0]).toEqual({
+      p: ["itinerary", "sections", 0, "text"],
+      oi: { ops: [{ insert: "Two targets\n" }] },
+    });
   });
 
   it("adds a note to a named undated section case-insensitively", async () => {
@@ -89,15 +92,15 @@ describe("addNote section targeting", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('section "Notes"');
-    // Insert and text travel in one submit so the note can never land empty.
-    expect(submittedOps).toHaveLength(1);
-    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
-    expect((submittedOps[0]![0] as { li: { type: string } }).li.type).toBe("note");
-    expect(submittedOps[0]![1]).toMatchObject({
-      p: ["itinerary", "sections", 0, "blocks", 0, "text"],
-      t: "rich-text",
-      o: [{ insert: "Keep passport copies here\n" }],
-    });
+    // The Notes area is free text: the note becomes its content, not a block.
+    expect(submittedOps).toEqual([
+      [
+        {
+          p: ["itinerary", "sections", 0, "text"],
+          oi: { ops: [{ insert: "Keep passport copies here\n" }] },
+        },
+      ],
+    ]);
   });
 
   it("adds a note to Places to visit when explicitly targeted", async () => {
@@ -138,7 +141,7 @@ describe("addNote section targeting", () => {
 
     expect(result.isError).toBeUndefined();
     expect(result.content[0]!.text).toContain('section "Notes"');
-    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "blocks", 0]);
+    expect(submittedOps[0]![0]!.p).toEqual(["itinerary", "sections", 0, "text"]);
   });
 
   it("rejects a dayPlan section even when it has no date", async () => {

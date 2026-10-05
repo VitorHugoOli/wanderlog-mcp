@@ -6,7 +6,7 @@ import { resolveDay } from "../resolvers/day.js";
 import type { ChecklistBlock, NoteBlock, QuillDelta, TripPlan } from "../types.js";
 import { isChecklistBlock, isPlaceBlock } from "../types.js";
 import { findDaySectionByDate, submitOp } from "./shared.js";
-import { extractDeltaText } from "./remove-note.js";
+import { EMBED_CHAR, extractDeltaText } from "./remove-note.js";
 
 export const editNoteInputSchema = {
   trip_key: z.string().min(1).describe("The trip to edit."),
@@ -23,7 +23,8 @@ export const editNoteInputSchema = {
 export const editNoteDescription = `
 Edits note content in a Wanderlog trip by finding and replacing a substring.
 
-Searches across freestanding notes, place annotations, and checklist titles and items.
+Searches across freestanding notes, the trip's free-text Notes area, place annotations, and
+checklist titles and items.
 The match is case-insensitive. If exactly one match is found, the replacement is made in place.
 If no matches are found, an error is returned. If multiple matches are found, a numbered list
 of previews is returned — call again with a more specific substring.
@@ -79,7 +80,8 @@ function matchInDelta(
   let plainText = "";
   for (const op of ops) {
     boundaries.push(plainText.length);
-    plainText += typeof op.insert === "string" ? op.insert : "";
+    // Embeds count as one character in Quill offsets.
+    plainText += typeof op.insert === "string" ? op.insert : op.insert ? EMBED_CHAR : "";
   }
   const lowerText = plainText.toLowerCase();
   const matchStart = lowerText.indexOf(lowerQuery);
@@ -106,6 +108,22 @@ export function findEditTargets(trip: TripPlan, query: string, day?: string): Ed
 
   for (const si of sectionIndices) {
     const section = sections[si]!;
+    if (section.type === "textOnly" && section.text) {
+      const m = matchInDelta(section.text, query);
+      if (m) {
+        targets.push({
+          kind: "rich-text",
+          label: `trip notes ("${section.heading || "Notes"}")`,
+          preview: `Trip notes: "${previewText(extractDeltaText(section.text))}"`,
+          sectionIndex: si,
+          blockIndex: -1,
+          fieldPath: ["itinerary", "sections", si, "text"],
+          offset: m.offset,
+          matchedLen: m.matchedLen,
+          crossesBoundary: m.crossesBoundary,
+        });
+      }
+    }
     for (let bi = 0; bi < section.blocks.length; bi++) {
       const block = section.blocks[bi]!;
       const blockBase: (string | number)[] = ["itinerary", "sections", si, "blocks", bi];

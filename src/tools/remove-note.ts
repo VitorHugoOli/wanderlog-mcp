@@ -18,7 +18,8 @@ export const removeNoteInputSchema = {
 };
 
 export const removeNoteDescription = `
-Removes a note block from a Wanderlog trip by matching a substring of its text content.
+Removes a note from a Wanderlog trip by matching a substring of its text content: either a note
+block in a day or list, or a paragraph of the trip's free-text Notes area.
 
 The match is case-insensitive. If exactly one note matches, it is deleted. If no notes match,
 an error is returned. If multiple notes match, a list of previews is returned — supply a more
@@ -43,6 +44,40 @@ export type NoteMatch = {
 export function extractDeltaText(delta: QuillDelta | undefined): string {
   const ops = delta?.ops ?? [];
   return ops.map((op) => (typeof op.insert === "string" ? op.insert : "")).join("");
+}
+
+/** Object (embed) placeholder: Quill counts an embed as one character. */
+export const EMBED_CHAR = "\uFFFC";
+
+/**
+ * Plain text whose offsets match Quill's: embeds (images, mentions) count as
+ * one character. Use this, not extractDeltaText, to compute retain/delete
+ * offsets for rich-text ops.
+ */
+export function deltaOffsetText(delta: QuillDelta | undefined): string {
+  const ops = delta?.ops ?? [];
+  return ops
+    .map((op) => (typeof op.insert === "string" ? op.insert : op.insert ? EMBED_CHAR : ""))
+    .join("");
+}
+
+/** Paragraphs of a free-text notes area containing `query` (case-insensitive). */
+export function findNoteParagraphs(
+  delta: QuillDelta | undefined,
+  query: string,
+): Array<{ offset: number; length: number; text: string }> {
+  const text = deltaOffsetText(delta);
+  const lowerQuery = query.toLowerCase();
+  const paragraphs: Array<{ offset: number; length: number; text: string }> = [];
+  let start = 0;
+  for (const line of text.split("\n")) {
+    const length = line.length + 1;
+    if (line.trim() && line.toLowerCase().includes(lowerQuery)) {
+      paragraphs.push({ offset: start, length, text: line });
+    }
+    start += length;
+  }
+  return paragraphs;
 }
 
 export function extractPlainText(block: NoteBlock): string {
@@ -80,6 +115,19 @@ export function findNoteMatches(trip: TripPlan, query: string, day?: string): No
   return matches;
 }
 
+/** Paragraphs of the trip's free-text Notes area(s) that contain the query. */
+function findNotesAreaParagraphs(trip: TripPlan, query: string) {
+  return trip.itinerary.sections.flatMap((section, sectionIndex) =>
+    section.type === "textOnly" && section.text
+      ? findNoteParagraphs(section.text, query).map((paragraph) => ({
+          sectionIndex,
+          paragraph,
+          docLength: deltaOffsetText(section.text).length,
+        }))
+      : [],
+  );
+}
+
 function notePreview(plainText: string): string {
   const flat = plainText.replace(/\n/g, " ").trim();
   return flat.length > 60 ? `${flat.slice(0, 57)}…` : flat;
@@ -93,21 +141,39 @@ export async function removeNote(
     const result = await submitOp(ctx, args.trip_key, async (entry, submit) => {
       const trip = entry.snapshot;
       const matches = findNoteMatches(trip, args.text, args.day);
-      if (matches.length === 0) {
+      const paragraphs = args.day ? [] : findNotesAreaParagraphs(trip, args.text);
+      const total = matches.length + paragraphs.length;
+      if (total === 0) {
         throw new WanderlogNotFoundError("Note", args.text);
       }
-      if (matches.length > 1) {
-        const lines = matches
+      if (total === 1 && paragraphs.length === 1) {
+        const { sectionIndex, paragraph, docLength } = paragraphs[0]!;
+        // Never delete the document's final newline: a Quill doc must end with one.
+        const length =
+          paragraph.offset + paragraph.length >= docLength
+            ? paragraph.length - 1
+            : paragraph.length;
+        const o: Array<Record<string, unknown>> = [];
+        if (paragraph.offset > 0) o.push({ retain: paragraph.offset });
+        o.push({ delete: length });
+        await submit([{ p: ["itinerary", "sections", sectionIndex, "text"], t: "rich-text", o }]);
+        return { plainText: paragraph.text, tripTitle: trip.title };
+      }
+      if (total > 1) {
+        const lines = [
+          ...matches.map((m) => m.plainText),
+          ...paragraphs.map((p) => p.paragraph.text),
+        ]
           .slice(0, 5)
-          .map((m, i) => `  ${i + 1}. "${notePreview(m.plainText)}"`)
+          .map((text, i) => `  ${i + 1}. "${notePreview(text)}"`)
           .join("\n");
-        const suffix = matches.length > 5 ? `\n  (${matches.length - 5} more…)` : "";
+        const suffix = total > 5 ? `\n  (${total - 5} more…)` : "";
         return {
           response: {
             content: [
               {
                 type: "text" as const,
-                text: `"${args.text}" matches ${matches.length} notes:\n${lines}${suffix}\n\nCall again with a more specific substring to identify the one you want.`,
+                text: `"${args.text}" matches ${total} notes:\n${lines}${suffix}\n\nCall again with a more specific substring to identify the one you want.`,
               },
             ],
             isError: true,
