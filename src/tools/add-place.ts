@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
@@ -7,6 +6,7 @@ import { resolveDay } from "../resolvers/day.js";
 import { fillNewBlockTextOps, noteTextToDelta } from "../ot/rich-text.js";
 import type { PlaceData } from "../types.js";
 import { ALLOW_DUPLICATE_HINT, findDuplicatePlace } from "./duplicate-guard.js";
+import { placeAmbiguityError, resolvePlaceQuery } from "./place-resolution.js";
 import {
   hasInsertAnchor,
   insertAnchorSchema,
@@ -152,6 +152,7 @@ export async function addPlace(
     const entry = await ctx.tripCache.getEntry(args.trip_key);
 
     let detail: PlaceData;
+    let resolutionNotes: string[] = [];
     if (args.place_id) {
       detail = await ctx.rest.getPlaceDetails(args.place_id);
     } else {
@@ -162,13 +163,8 @@ export async function addPlace(
           "This trip has no associated geo and no existing places. Add a place via the Wanderlog UI first.",
         );
       }
-      const predictions = await ctx.rest.searchPlacesAutocomplete({
-        input: args.place!,
-        sessionToken: randomUUID(),
-        location: { latitude: center.lat, longitude: center.lng },
-        radius: 15000,
-      });
-      if (predictions.length === 0) {
+      const outcome = await resolvePlaceQuery(ctx, args.place!, center, entry.geos);
+      if (outcome.kind === "none") {
         throw new WanderlogError(
           `No place found matching "${args.place}" near ${entry.snapshot.title}`,
           "place_not_found",
@@ -181,8 +177,16 @@ export async function addPlace(
           },
         );
       }
-      const topPrediction = predictions[0]!;
-      detail = await ctx.rest.getPlaceDetails(topPrediction.place_id);
+      if (outcome.kind === "ambiguous") {
+        throw placeAmbiguityError(
+          args.place!,
+          entry.snapshot.title,
+          outcome.candidates,
+          "wanderlog_add_place",
+        );
+      }
+      detail = outcome.detail;
+      resolutionNotes = outcome.notes;
     }
     const imageKeys = await ctx.rest.getPlacePhotos(detail);
 
@@ -267,8 +271,11 @@ export async function addPlace(
       return { content: [{ type: "text", text }] };
     }
 
+    // Echo the address: it is what makes a wrong-but-plausible match visible.
+    const where = detail.formatted_address ? ` (${detail.formatted_address})` : "";
     const parts = [
-      `Added ${detail.name} to ${mutation.added.join(" and ")}${mutation.placement} in "${mutation.tripTitle}".`,
+      `Added ${detail.name}${where} to ${mutation.added.join(" and ")}${mutation.placement} in "${mutation.tripTitle}".`,
+      ...resolutionNotes,
     ];
     if (mutation.alreadyThere.length > 0) {
       parts.push(`Already in ${mutation.alreadyThere.join(" and ")} — not added there again.`);

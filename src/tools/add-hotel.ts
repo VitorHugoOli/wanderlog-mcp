@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { placeAmbiguityError, resolvePlaceQuery } from "./place-resolution.js";
 import type { AppContext } from "../context.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
@@ -65,20 +65,24 @@ export async function addHotel(
       );
     }
 
-    const predictions = await ctx.rest.searchPlacesAutocomplete({
-      input: args.hotel,
-      sessionToken: randomUUID(),
-      location: { latitude: center.lat, longitude: center.lng },
-      radius: 15000,
-    });
-    if (predictions.length === 0) {
+    const outcome = await resolvePlaceQuery(ctx, args.hotel, center, entry.geos);
+    if (outcome.kind === "none") {
       throw new WanderlogError(
         `No hotel found matching "${args.hotel}" near ${entry.snapshot.title}`,
         "hotel_not_found",
         "Try a more specific name or check the spelling.",
       );
     }
-    const detail: PlaceData = await ctx.rest.getPlaceDetails(predictions[0]!.place_id);
+    if (outcome.kind === "ambiguous") {
+      throw placeAmbiguityError(
+        args.hotel,
+        entry.snapshot.title,
+        outcome.candidates,
+        "wanderlog_add_hotel",
+      );
+    }
+    const detail: PlaceData = outcome.detail;
+    const resolutionNotes = outcome.notes;
     const imageKeys = await ctx.rest.getPlacePhotos(detail);
 
     const tripTitle = await submitOp(ctx, args.trip_key, async (lockedEntry, submit) => {
@@ -121,7 +125,11 @@ export async function addHotel(
       return trip.title;
     });
 
-    const text = `Added ${detail.name} to "${tripTitle}" · check-in ${args.check_in} → check-out ${args.check_out}.`;
+    const where = detail.formatted_address ? ` (${detail.formatted_address})` : "";
+    const text = [
+      `Added ${detail.name}${where} to "${tripTitle}" · check-in ${args.check_in} → check-out ${args.check_out}.`,
+      ...resolutionNotes,
+    ].join(" ");
     return { content: [{ type: "text", text }] };
   } catch (err) {
     const msg =
