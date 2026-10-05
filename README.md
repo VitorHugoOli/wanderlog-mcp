@@ -29,6 +29,15 @@ Personal fork ([VitorHugoOli/wanderlog-mcp](https://github.com/VitorHugoOli/wand
 - The process exits when its client closes stdin or disappears; REST calls time out (20s, 60s for hotel search); the MCP handshake no longer waits for the auth probe; a rejected cookie is cached for 30s only and network failures are never reported as a bad cookie; anything shaped like the session cookie is stripped from tool output and logs.
 - `add_place` / `add_note` write the block and all its fields in one submit, skip an identical repeat (`allow_duplicate` to override), and a write that failed after leaving tells the agent it may already be saved.
 
+### What the fork adds
+
+- **Placement**: `add_place` / `add_note` / `add_checklist` take `position`, `before` or `after`; `get_trip` numbers every item in days and lists so positions match what you see; `move_block` also moves a place to another day or list (`to_day` / `to_section`) keeping its note, times and photos; `wanderlog_reorder_sections` (upstream PR #71).
+- **Notes**: the trip-level Notes area (a free-text section, "Notas" in Portuguese trips) is supported by `add_note` / `edit_note` / `remove_note`; markdown (bold, italic, links, lists, headings) becomes Wanderlog rich text; `edit_note` keeps formatting; `get_trip` detailed shows `[id …]` so `remove_note note_ids` / `edit_note note_id` can target exact notes.
+- **Safer place lookup**: a top search hit that clearly is not the requested place is refused with candidates; near-ties and far-away results are flagged; the search radius covers day trips and regional trips, with an unbiased fallback; confirmations echo the address. Accent-insensitive references.
+- **New tools**: `wanderlog_add_places` (batch), `wanderlog_copy_place`, `wanderlog_remove_duplicate_places`, `wanderlog_undo` (real revert of this session's changes, refused if the trip changed elsewhere), `wanderlog_attach_file` / `wanderlog_list_attachments`, photos on journal stops (`photo_paths`), and from fredogemilang's fork: `add_flight`, `update_trip`, `delete_trip` (owner-only, exact-title confirmation, `WANDERLOG_ALLOW_DESTRUCTIVE=0` disables it), `get_place_details`, `edit_checklist`, `edit_reservation`, `explore`, `get_travel_times`, `set_budget` / `budget_summary` with paid-by/split, `add_restaurant_reservation`.
+- **Other**: hotel confirmation number, guests and check-in/out times; list marker color/icon; `search_hotels` name filter that actually filters (jesuissur); `update_trip_dates` merges duplicated day sections (upstream issue #58).
+- **Uploads** are limited to travel documents/photos, never from hidden files or folders, 25 MB max; `WANDERLOG_UPLOAD_DIR` can restrict them to one folder.
+
 ### Logs
 
 Every server writes JSON lines to `$TMPDIR/wanderlog-mcp/wanderlog-mcp-YYYY-MM-DD.log` (one record per event, with `pid` and `scope`: `server`, `ws`, `cache`, `submit`, `rest`) and the same text to stderr; files older than 7 days are pruned at startup. `WANDERLOG_LOG_LEVEL=debug|info|warn|error` (default `info`), `WANDERLOG_LOG_DIR` to move them, `WANDERLOG_LOG_FILE=0` to disable the file. Cookie-shaped values are redacted.
