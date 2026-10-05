@@ -38,6 +38,10 @@ Personal fork ([VitorHugoOli/wanderlog-mcp](https://github.com/VitorHugoOli/wand
 - **Other**: hotel confirmation number, guests and check-in/out times; list marker color/icon; `search_hotels` name filter that actually filters (jesuissur); `update_trip_dates` merges duplicated day sections (upstream issue #58).
 - **Uploads** are limited to travel documents/photos, never from hidden files or folders, 25 MB max; `WANDERLOG_UPLOAD_DIR` can restrict them to one folder.
 
+### Install for MCP clients
+
+`./scripts/install-local.sh` builds and copies the server to `~/.local/share/wanderlog-mcp/app` (outside ~/Desktop, which macOS privacy protection can block for Claude Desktop). Clients run `node ~/.local/share/wanderlog-mcp/app/dist/index.js` with `WANDERLOG_COOKIE` set; re-run the script after every change and restart the client sessions.
+
 ### Logs
 
 Every server writes JSON lines to `$TMPDIR/wanderlog-mcp/wanderlog-mcp-YYYY-MM-DD.log` (one record per event, with `pid` and `scope`: `server`, `ws`, `cache`, `submit`, `rest`) and the same text to stderr; files older than 7 days are pruned at startup. `WANDERLOG_LOG_LEVEL=debug|info|warn|error` (default `info`), `WANDERLOG_LOG_DIR` to move them, `WANDERLOG_LOG_FILE=0` to disable the file. Cookie-shaped values are redacted.
