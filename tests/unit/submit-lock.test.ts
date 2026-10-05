@@ -172,17 +172,18 @@ describe("submitOp per-trip mutation transaction", () => {
     });
   });
 
-  it("invalidates on submit or local-apply failure", async () => {
+  it("invalidates on submit failure", async () => {
     const submitFailure = makeFakeContext({ failOn: () => true });
     await expect(submitOp(submitFailure.ctx, "tripA", increment)).rejects.toThrow(
       "simulated failure",
     );
     expect(submitFailure.counts().invalidateCount).toBe(1);
+  });
 
+  it("resyncs instead of failing when only the local apply fails after an ack", async () => {
+    // The server accepted the write; an error here would make the agent redo it.
     const applyFailure = makeFakeContext({ failApply: true });
-    await expect(submitOp(applyFailure.ctx, "tripA", increment)).rejects.toThrow(
-      "simulated apply failure",
-    );
+    await expect(submitOp(applyFailure.ctx, "tripA", increment)).resolves.toBeUndefined();
     expect(applyFailure.counts().invalidateCount).toBe(1);
   });
 

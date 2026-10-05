@@ -87,9 +87,7 @@ export async function createTrip(
       privacy: args.privacy ?? "private",
     });
 
-    const locationLabel = top.stateName
-      ? `${top.name}, ${top.stateName}, ${top.countryName}`
-      : `${top.name}, ${top.countryName ?? ""}`.trim().replace(/,\s*$/, "");
+    const locationLabel = [top.name, top.stateName, top.countryName].filter(Boolean).join(", ");
     const days = result.key
       ? Math.round(
           (new Date(args.end_date).getTime() - new Date(args.start_date).getTime()) / 86_400_000,

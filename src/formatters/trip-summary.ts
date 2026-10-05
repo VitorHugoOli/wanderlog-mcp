@@ -123,8 +123,11 @@ function sectionDefaultHeading(section: Section): string {
 }
 
 function formatTripHeader(trip: TripPlan, format: ResponseFormat): string {
-  const dates = `${trip.startDate} → ${trip.endDate}`;
-  const base = `${trip.title} · ${dates} · ${trip.days} days · ${trip.placeCount} places`;
+  const dates = trip.startDate ? `${trip.startDate} → ${trip.endDate ?? "?"}` : "no dates";
+  const parts = [trip.title, dates];
+  if (typeof trip.days === "number") parts.push(`${trip.days} days`);
+  if (typeof trip.placeCount === "number") parts.push(`${trip.placeCount} places`);
+  const base = parts.join(" · ");
   if (format === "concise") return base;
 
   const extras: string[] = [

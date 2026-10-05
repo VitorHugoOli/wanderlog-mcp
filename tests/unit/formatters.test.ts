@@ -141,3 +141,18 @@ describe("transit block formatting", () => {
     expect(line).toContain("R9");
   });
 });
+
+describe("formatTrip header", () => {
+  it("never prints undefined for an undated trip without counts", () => {
+    const trip = {
+      ...structuredClone(queenstownTrip),
+      startDate: undefined,
+      endDate: undefined,
+      days: undefined,
+      placeCount: undefined,
+    } as unknown as typeof queenstownTrip;
+    const header = formatTrip(trip, "concise").split("\n")[0]!;
+    expect(header).not.toContain("undefined");
+    expect(header).toContain("no dates");
+  });
+});
