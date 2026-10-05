@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { AppContext } from "../context.js";
 import type { CacheEntry } from "../cache/trip-cache.js";
 import { WanderlogError, WanderlogValidationError } from "../errors.js";
@@ -17,6 +16,7 @@ import type {
   TripPlan,
 } from "../types.js";
 import { isPlaceBlock } from "../types.js";
+import { placeAmbiguityError, resolvePlaceQuery } from "./place-resolution.js";
 
 /**
  * Per-trip mutex — serializes submits against the same trip so concurrent
@@ -636,20 +636,20 @@ export async function resolveEndpointPlace(
       "This trip has no associated geo and no existing places.",
     );
   }
-  const predictions = await ctx.rest.searchPlacesAutocomplete({
-    input: query,
-    sessionToken: randomUUID(),
-    location: { latitude: center.lat, longitude: center.lng },
-    radius: 15000,
-  });
-  if (predictions.length === 0) {
+  // Endpoints are often in another city (a train to the next stop), which the
+  // wide trip radius and unbiased fallback of resolvePlaceQuery cover.
+  const outcome = await resolvePlaceQuery(ctx, query, center, geos);
+  if (outcome.kind === "none") {
     throw new WanderlogError(
       `No place found matching "${query}" near ${trip.title}`,
       "place_not_found",
       "Try a more specific name or check the spelling.",
     );
   }
-  return ctx.rest.getPlaceDetails(predictions[0]!.place_id);
+  if (outcome.kind === "ambiguous") {
+    throw placeAmbiguityError(query, trip.title, outcome.candidates, "the same tool");
+  }
+  return outcome.detail;
 }
 
 /** Build a checklist block with pre-populated items. */

@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { placeAmbiguityError, resolvePlaceQuery } from "./place-resolution.js";
 import type { AppContext } from "../context.js";
 import { WanderlogError } from "../errors.js";
 import type { Json0Op } from "../ot/apply.js";
@@ -89,13 +89,8 @@ export async function addJournal(
           "This trip has no associated geo and no existing places to anchor the search. Add a place to the trip first.",
         );
       }
-      const predictions = await ctx.rest.searchPlacesAutocomplete({
-        input: args.place,
-        sessionToken: randomUUID(),
-        location: { latitude: center.lat, longitude: center.lng },
-        radius: 15000,
-      });
-      if (predictions.length === 0) {
+      const outcome = await resolvePlaceQuery(ctx, args.place, center, entry.geos);
+      if (outcome.kind === "none") {
         throw new WanderlogError(
           `No place found matching "${args.place}" near ${entry.snapshot.title}`,
           "place_not_found",
@@ -107,7 +102,15 @@ export async function addJournal(
           },
         );
       }
-      searchedPlace = await ctx.rest.getPlaceDetails(predictions[0]!.place_id);
+      if (outcome.kind === "ambiguous") {
+        throw placeAmbiguityError(
+          args.place,
+          entry.snapshot.title,
+          outcome.candidates,
+          "wanderlog_add_journal",
+        );
+      }
+      searchedPlace = outcome.detail;
     }
 
     const result = await submitOp(ctx, args.trip_key, async (lockedEntry, submit) => {
